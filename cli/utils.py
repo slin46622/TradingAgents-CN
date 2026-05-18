@@ -6,7 +6,7 @@ from typing import Dict, List
 import questionary
 from rich.console import Console
 
-from cli.models import AnalystType
+from cli.models import AnalystType, AssetType
 from tradingagents.llm_clients.model_catalog import get_model_options
 from tradingagents.utils.logging_manager import get_logger
 from tradingagents.utils.stock_utils import StockUtils
@@ -287,3 +287,40 @@ def select_llm_provider() -> tuple[str, str]:
 
     logger.info(f"已选择LLM提供商 | Selected provider: {provider_key}\tURL: {url}")
     return provider_key, url
+
+
+# ---------------------------------------------------------------------------
+# Asset type detection
+# ---------------------------------------------------------------------------
+
+# Symbols ending with these suffixes are treated as crypto pairs.
+_CRYPTO_SUFFIXES = ("-USD", "-USDT", "-BTC", "-ETH", "USDT", "USD")
+
+# Known crypto tickers (case-insensitive first-pass check).
+_CRYPTO_TICKERS = frozenset({
+    "BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "DOT", "AVAX",
+    "LINK", "MATIC", "UNI", "ATOM", "LTC", "BCH", "NEAR", "APT",
+})
+
+
+def detect_asset_type(symbol: str) -> AssetType:
+    """Detect whether ``symbol`` represents a crypto asset or a stock."""
+    cleaned = symbol.strip().upper()
+    if any(cleaned.endswith(suf) for suf in _CRYPTO_SUFFIXES):
+        return AssetType.CRYPTO
+    if cleaned in _CRYPTO_TICKERS:
+        return AssetType.CRYPTO
+    return AssetType.STOCK
+
+
+def filter_analysts_for_asset_type(
+    analysts: list[AnalystType], asset_type: AssetType
+) -> list[AnalystType]:
+    """Remove analysts that don't make sense for the given asset type.
+
+    For crypto assets, fundamentals analyst is excluded because there
+    are no traditional financial statements to analyze.
+    """
+    if asset_type == AssetType.CRYPTO:
+        return [a for a in analysts if a != AnalystType.FUNDAMENTALS]
+    return analysts

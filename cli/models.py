@@ -7,6 +7,11 @@ from tradingagents.utils.logging_init import get_logger
 logger = get_logger("cli")
 
 
+class AssetType(str, Enum):
+    STOCK = "stock"
+    CRYPTO = "crypto"
+
+
 class AnalystType(str, Enum):
     MARKET = "market"
     SOCIAL = "social"
