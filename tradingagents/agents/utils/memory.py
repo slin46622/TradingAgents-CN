@@ -4,8 +4,10 @@ from openai import OpenAI
 import dashscope
 from dashscope import TextEmbedding
 import os
+import re
 import threading
 import hashlib
+from pathlib import Path
 from typing import Dict, Optional
 
 # 导入统一日志系统
@@ -699,3 +701,192 @@ if __name__ == "__main__":
 
     except Exception as e:
         logger.error(f"Error during recommendation: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# TradingMemoryLog — append-only markdown decision log with PM context injection
+# ---------------------------------------------------------------------------
+
+
+class TradingMemoryLog:
+    """Append-only markdown log of trading decisions and reflections.
+
+    Stores decisions as structured markdown entries with rating tags for
+    fast filtering.  Pending entries are resolved with actual outcomes
+    after the trade closes.  The ``get_past_context()`` method produces a
+    formatted string for injection into the Portfolio Manager's prompt so
+    past decisions inform future ones.
+    """
+
+    # HTML comment delimiter safe against LLM prose output
+    _SEPARATOR = "\n\n<!-- ENTRY_END -->\n\n"
+
+    _DECISION_RE = re.compile(r"DECISION:\n(.*?)(?=\nREFLECTION:|\Z)", re.DOTALL)
+    _REFLECTION_RE = re.compile(r"REFLECTION:\n(.*?)$", re.DOTALL)
+
+    def __init__(self, config: dict = None):
+        cfg = config or {}
+        self._log_path = None
+        path = cfg.get("memory_log_path")
+        if path:
+            self._log_path = Path(path).expanduser()
+            self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._max_entries = cfg.get("memory_log_max_entries")
+
+    def store_decision(self, ticker: str, trade_date: str, final_trade_decision: str) -> None:
+        """Append a pending decision entry."""
+        if not self._log_path:
+            return
+        # Idempotency guard
+        if self._log_path.exists():
+            raw = self._log_path.read_text(encoding="utf-8")
+            for line in raw.splitlines():
+                if line.startswith(f"[{trade_date} | {ticker} |") and line.endswith("| pending]"):
+                    return
+        try:
+            from tradingagents.agents.utils.rating import parse_rating
+            rating = parse_rating(final_trade_decision)
+        except ImportError:
+            rating = "Hold"
+        tag = f"[{trade_date} | {ticker} | {rating} | pending]"
+        entry = f"{tag}\n\nDECISION:\n{final_trade_decision}{self._SEPARATOR}"
+        with open(self._log_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+
+    def load_entries(self) -> list[dict]:
+        """Parse all entries from the log file."""
+        if not self._log_path or not self._log_path.exists():
+            return []
+        text = self._log_path.read_text(encoding="utf-8")
+        raw_entries = [e.strip() for e in text.split(self._SEPARATOR) if e.strip()]
+        return [p for p in (self._parse_entry(r) for r in raw_entries) if p]
+
+    def get_pending_entries(self) -> list[dict]:
+        return [e for e in self.load_entries() if e.get("pending")]
+
+    def get_past_context(self, ticker: str, n_same: int = 5, n_cross: int = 3) -> str:
+        """Build a formatted context string from past resolved entries."""
+        entries = [e for e in self.load_entries() if not e.get("pending")]
+        if not entries:
+            return ""
+
+        same, cross = [], []
+        for e in reversed(entries):
+            if len(same) >= n_same and len(cross) >= n_cross:
+                break
+            if e.get("ticker", "").upper() == ticker.upper() and len(same) < n_same:
+                same.append(e)
+            elif len(cross) < n_cross:
+                cross.append(e)
+
+        parts = []
+        if same:
+            parts.append("## Same-ticker decisions\n")
+            for e in same:
+                parts.append(f"### {e['date']} — Rating: {e['rating']} — Return: {e['return_pct']}")
+                parts.append(f"**Decision**: {e['decision'][:500]}")
+                if e.get("reflection"):
+                    parts.append(f"**Reflection**: {e['reflection'][:300]}")
+                parts.append("")
+        if cross:
+            parts.append("## Cross-ticker lessons\n")
+            for e in cross:
+                parts.append(f"### {e['ticker']} on {e['date']} — {e['rating']} — Return: {e['return_pct']}")
+                parts.append(f"**Lesson**: {e.get('reflection', '')[:300]}")
+                parts.append("")
+        return "\n".join(parts)
+
+    def update_with_outcome(self, ticker: str, trade_date: str, return_pct: float,
+                            alpha_pct: float, holding_days: int, reflection: str) -> None:
+        """Resolve a pending entry with actual outcome."""
+        if not self._log_path or not self._log_path.exists():
+            return
+        text = self._log_path.read_text(encoding="utf-8")
+        old_tag = f"[{trade_date} | {ticker} |"
+        new_tag_start = f"[{trade_date} | {ticker} |"
+        for entry_text in text.split(self._SEPARATOR):
+            if not entry_text.strip():
+                continue
+            lines = entry_text.strip().splitlines()
+            if not lines:
+                continue
+            tag_line = lines[0].strip()
+            if tag_line.startswith(old_tag) and tag_line.endswith("| pending]"):
+                rating = tag_line.split("|")[2].strip() if "|" in tag_line else "Hold"
+                new_tag = f"[{trade_date} | {ticker} | {rating} | {return_pct:+.1f}% | {alpha_pct:+.1f}% | {holding_days}d]"
+                old_entry = tag_line + "\n\n" + "\n".join(lines[1:])
+                new_entry_text = "\n".join(lines[1:]) if len(lines) > 1 else ""
+                new_entry = f"{new_tag}\n\nDECISION:\n{new_entry_text}\n\nREFLECTION:\n{reflection}"
+                text = text.replace(old_entry, new_entry, 1)
+                break
+
+        with open(self._log_path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+        if self._max_entries is not None:
+            self._prune_old_resolved()
+
+    def _prune_old_resolved(self) -> None:
+        """Keep only the N most recent resolved entries, plus all pending."""
+        if not self._log_path or not self._log_path.exists():
+            return
+        entries = self.load_entries()
+        pending = [e for e in entries if e.get("pending")]
+        resolved = [e for e in entries if not e.get("pending")]
+        if len(resolved) <= self._max_entries:
+            return
+        resolved = resolved[-self._max_entries:]
+        all_entries = pending + resolved
+        all_entries.sort(key=lambda e: e.get("date", ""))
+        lines = []
+        for e in all_entries:
+            tag = f"[{e['date']} | {e['ticker']} | {e['rating']}"
+            if e.get("pending"):
+                tag += " | pending]"
+            else:
+                tag += f" | {e['return_pct']:+.1f}% | {e['alpha_pct']:+.1f}% | {e['holding_days']}d]"
+            parts = [tag, "", "DECISION:", e["decision"]]
+            if e.get("reflection"):
+                parts.extend(["", "REFLECTION:", e["reflection"]])
+            lines.append("\n".join(parts))
+        with open(self._log_path, "w", encoding="utf-8") as f:
+            f.write(self._SEPARATOR.join(lines) + self._SEPARATOR)
+
+    def _parse_entry(self, raw: str) -> dict | None:
+        lines = raw.splitlines()
+        if not lines:
+            return None
+        tag_line = lines[0].strip()
+        if not tag_line.startswith("["):
+            return None
+        # Parse tag: [date | ticker | rating | ...]
+        parts = tag_line.strip("[]").split("|")
+        parts = [p.strip() for p in parts]
+        if len(parts) < 3:
+            return None
+        entry = {
+            "date": parts[0],
+            "ticker": parts[1],
+            "rating": parts[2],
+            "pending": "pending" in tag_line,
+            "decision": "",
+            "reflection": "",
+            "return_pct": 0.0,
+            "alpha_pct": 0.0,
+            "holding_days": 0,
+        }
+        if not entry["pending"] and len(parts) >= 6:
+            try:
+                entry["return_pct"] = float(parts[3].rstrip("%"))
+                entry["alpha_pct"] = float(parts[4].rstrip("%"))
+                entry["holding_days"] = int(parts[5].rstrip("d"))
+            except (ValueError, IndexError):
+                pass
+        body = "\n".join(lines[1:])
+        dm = self._DECISION_RE.search(body)
+        if dm:
+            entry["decision"] = dm.group(1).strip()
+        rm = self._REFLECTION_RE.search(body)
+        if rm:
+            entry["reflection"] = rm.group(1).strip()
+        return entry
