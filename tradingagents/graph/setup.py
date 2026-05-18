@@ -13,6 +13,7 @@ from tradingagents.agents import (
     create_msg_delete,
     create_news_analyst,
     create_neutral_debator,
+    create_portfolio_manager,
     create_research_manager,
     create_risk_manager,
     create_risky_debator,
@@ -178,6 +179,9 @@ class GraphSetup:
             self.deep_thinking_llm, self.risk_manager_memory
         )
 
+        # Create portfolio manager node (structured output decision synthesis)
+        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+
         # Create workflow
         workflow = StateGraph(AgentState)
 
@@ -198,6 +202,7 @@ class GraphSetup:
         workflow.add_node("Neutral Analyst", neutral_analyst)
         workflow.add_node("Safe Analyst", safe_analyst)
         workflow.add_node("Risk Judge", risk_manager_node)
+        workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
         # Define edges
         # Start with the first analyst
@@ -269,7 +274,8 @@ class GraphSetup:
             },
         )
 
-        workflow.add_edge("Risk Judge", END)
+        workflow.add_edge("Risk Judge", "Portfolio Manager")
+        workflow.add_edge("Portfolio Manager", END)
 
         # Compile and return
         return workflow.compile()
