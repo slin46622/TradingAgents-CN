@@ -88,8 +88,9 @@ class OpenAIClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
-        # DeepSeek thinking mode: disable it to avoid reasoning_content conflicts
-        if self.provider == "deepseek":
+        # Disable thinking/reasoning mode for models that output
+        # reasoning_content instead of content (DeepSeek, Qwen, etc.)
+        if self.provider in ("deepseek", "local"):
             if "model_kwargs" not in llm_kwargs:
                 llm_kwargs["model_kwargs"] = {}
             llm_kwargs["model_kwargs"]["extra_body"] = {"thinking": {"type": "disabled"}}
