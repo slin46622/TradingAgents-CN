@@ -1140,23 +1140,25 @@ class TradingAgentsGraph:
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
             "investment_debate_state": {
-                "bull_history": final_state["investment_debate_state"]["bull_history"],
-                "bear_history": final_state["investment_debate_state"]["bear_history"],
-                "history": final_state["investment_debate_state"]["history"],
-                "current_response": final_state["investment_debate_state"][
-                    "current_response"
-                ],
-                "judge_decision": final_state["investment_debate_state"][
-                    "judge_decision"
-                ],
+                "bull_history": final_state["investment_debate_state"].get("bull_history", ""),
+                "bear_history": final_state["investment_debate_state"].get("bear_history", ""),
+                "history": final_state["investment_debate_state"].get("history", ""),
+                "current_response": final_state["investment_debate_state"].get(
+                    "current_response", ""
+                ),
+                "judge_decision": final_state["investment_debate_state"].get(
+                    "judge_decision", ""
+                ),
             },
             "trader_investment_decision": final_state["trader_investment_plan"],
             "risk_debate_state": {
-                "risky_history": final_state["risk_debate_state"]["risky_history"],
-                "safe_history": final_state["risk_debate_state"]["safe_history"],
-                "neutral_history": final_state["risk_debate_state"]["neutral_history"],
-                "history": final_state["risk_debate_state"]["history"],
-                "judge_decision": final_state["risk_debate_state"]["judge_decision"],
+                "risky_history": final_state["risk_debate_state"].get("risky_history",
+                    final_state["risk_debate_state"].get("aggressive_history", "")),
+                "safe_history": final_state["risk_debate_state"].get("safe_history",
+                    final_state["risk_debate_state"].get("conservative_history", "")),
+                "neutral_history": final_state["risk_debate_state"].get("neutral_history", ""),
+                "history": final_state["risk_debate_state"].get("history", ""),
+                "judge_decision": final_state["risk_debate_state"].get("judge_decision", ""),
             },
             "investment_plan": final_state["investment_plan"],
             "final_trade_decision": final_state["final_trade_decision"],
