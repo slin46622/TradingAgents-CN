@@ -2,13 +2,22 @@ import functools
 import time
 import json
 
+from langchain_core.messages import AIMessage
+
 # 导入统一日志系统
 from tradingagents.utils.logging_init import get_logger
 from tradingagents.agents.utils.instrument_utils import build_instrument_context
+from tradingagents.agents.schemas import TraderProposal, render_trader_proposal
+from tradingagents.agents.utils.structured import (
+    bind_structured,
+    invoke_structured_or_freetext,
+)
 logger = get_logger("default")
 
 
 def create_trader(llm, memory):
+    structured_llm = bind_structured(llm, TraderProposal, "Trader")
+
     def trader_node(state, name):
         company_name = state["company_of_interest"]
         instrument_context = build_instrument_context(company_name)
@@ -103,16 +112,22 @@ def create_trader(llm, memory):
         logger.debug(f"💰 [DEBUG] 准备调用LLM，系统提示包含货币: {currency}")
         logger.debug(f"💰 [DEBUG] 系统提示中的关键部分: 目标价格({currency})")
 
-        result = llm.invoke(messages)
+        trader_plan = invoke_structured_or_freetext(
+            structured_llm,
+            llm,
+            messages,
+            render_trader_proposal,
+            "Trader",
+        )
 
         logger.debug(f"💰 [DEBUG] LLM调用完成")
-        logger.debug(f"💰 [DEBUG] 交易员回复长度: {len(result.content)}")
-        logger.debug(f"💰 [DEBUG] 交易员回复前500字符: {result.content[:500]}...")
+        logger.debug(f"💰 [DEBUG] 交易员回复长度: {len(trader_plan)}")
+        logger.debug(f"💰 [DEBUG] 交易员回复前500字符: {trader_plan[:500]}...")
         logger.debug(f"💰 [DEBUG] ===== 交易员节点结束 =====")
 
         return {
-            "messages": [result],
-            "trader_investment_plan": result.content,
+            "messages": [AIMessage(content=trader_plan)],
+            "trader_investment_plan": trader_plan,
             "sender": name,
         }
 
