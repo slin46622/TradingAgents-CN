@@ -10,7 +10,22 @@ from .validators import validate_model
 class NormalizedChatOpenAI(ChatOpenAI):
     """ChatOpenAI wrapper that normalizes typed content blocks to text."""
 
+    def _preprocess_messages(self, input):
+        """Strip reasoning_content from messages to avoid DeepSeek API errors."""
+        # input can be a dict with 'messages' key, a list, or a single message
+        messages = None
+        if isinstance(input, dict):
+            messages = input.get('messages', [])
+        elif isinstance(input, list):
+            messages = input
+        if isinstance(messages, list):
+            for msg in messages:
+                if hasattr(msg, 'additional_kwargs') and 'reasoning_content' in msg.additional_kwargs:
+                    del msg.additional_kwargs['reasoning_content']
+        return input
+
     def invoke(self, input, config=None, **kwargs):
+        input = self._preprocess_messages(input)
         return normalize_content(super().invoke(input, config, **kwargs))
 
 
@@ -61,7 +76,8 @@ class OpenAIClient(BaseLLMClient):
                 if api_key:
                     llm_kwargs["api_key"] = api_key
             else:
-                llm_kwargs["api_key"] = "ollama"
+                # Providers without API key env (like ollama) use a placeholder
+                llm_kwargs["api_key"] = "sk-placeholder"
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
             api_key = self.kwargs.get("api_key") or os.environ.get("OPENAI_API_KEY")
@@ -71,6 +87,12 @@ class OpenAIClient(BaseLLMClient):
         for key in _PASSTHROUGH_KWARGS:
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
+
+        # DeepSeek thinking mode: disable it to avoid reasoning_content conflicts
+        if self.provider == "deepseek":
+            if "model_kwargs" not in llm_kwargs:
+                llm_kwargs["model_kwargs"] = {}
+            llm_kwargs["model_kwargs"]["extra_body"] = {"thinking": {"type": "disabled"}}
 
         return NormalizedChatOpenAI(**llm_kwargs)
 

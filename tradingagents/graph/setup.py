@@ -17,6 +17,7 @@ from tradingagents.agents import (
     create_risk_manager,
     create_risky_debator,
     create_safe_debator,
+    create_sentiment_analyst,
     create_social_media_analyst,
     create_trader,
 )
@@ -108,6 +109,13 @@ class GraphSetup:
             )
             delete_nodes["market"] = create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
+
+        if "sentiment" in selected_analysts:
+            analyst_nodes["sentiment"] = create_sentiment_analyst(
+                self.quick_thinking_llm
+            )
+            delete_nodes["sentiment"] = create_msg_delete()
+            tool_nodes["sentiment"] = self.tool_nodes["sentiment"]
 
         if "social" in selected_analysts:
             analyst_nodes["social"] = create_social_media_analyst(
