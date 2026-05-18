@@ -34,6 +34,7 @@ from .setup import GraphSetup
 from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
+from .checkpointer import save_checkpoint, load_checkpoint, list_checkpoints, clean_old_checkpoints
 
 
 def create_llm_by_provider(provider: str, model: str, backend_url: str, temperature: float, max_tokens: int, timeout: int, api_key: str = None, **extra_kwargs):
@@ -581,6 +582,8 @@ class TradingAgentsGraph:
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
         # State tracking
+        import uuid
+        self.run_id = uuid.uuid4().hex[:12]
         self.curr_state = None
         self.ticker = None
         self.log_states_dict = {}  # date to full state dict
@@ -646,7 +649,7 @@ class TradingAgentsGraph:
             ),
         }
 
-    def propagate(self, company_name, trade_date, progress_callback=None, task_id=None):
+    def propagate(self, company_name, trade_date, progress_callback=None, task_id=None, resume_from=None):
         """Run the trading agents graph for a company on a specific date.
 
         Args:
@@ -654,6 +657,7 @@ class TradingAgentsGraph:
             trade_date: Date for analysis
             progress_callback: Optional callback function for progress updates
             task_id: Optional task ID for tracking performance data
+            resume_from: Optional run_id to resume from a previous checkpoint
         """
 
         # 添加详细的接收日志
@@ -664,6 +668,16 @@ class TradingAgentsGraph:
 
         self.ticker = company_name
         logger.debug(f"🔍 [GRAPH DEBUG] 设置self.ticker: '{self.ticker}'")
+
+        # Resume from checkpoint if requested
+        if resume_from:
+            checkpoint = load_checkpoint(company_name, resume_from)
+            if checkpoint and checkpoint.get("state"):
+                logger.info(f"💾 Resuming from checkpoint: {company_name}/{resume_from} (phase: {checkpoint.get('phase', '?')})")
+                past_context = checkpoint["state"].get("past_context", "")
+                logger.info(f"💾 Injected past_context: {len(past_context)} chars")
+            else:
+                logger.warning(f"⚠️ Checkpoint not found: {company_name}/{resume_from}")
 
         # Initialize state
         logger.debug(f"🔍 [GRAPH DEBUG] 创建初始状态，传递参数: company_name='{company_name}', trade_date='{trade_date}'")
@@ -809,6 +823,16 @@ class TradingAgentsGraph:
 
         # Store current state for reflection
         self.curr_state = final_state
+
+        # Save checkpoint for resume capability
+        try:
+            save_checkpoint(final_state, self.run_id, "complete", {
+                "ticker": company_name,
+                "trade_date": trade_date,
+            })
+            logger.info(f"💾 Checkpoint saved: {company_name}/{self.run_id}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to save checkpoint: {exc}")
 
         # Log state
         self._log_state(trade_date, final_state)
@@ -1169,3 +1193,17 @@ class TradingAgentsGraph:
     def process_signal(self, full_signal, stock_symbol=None):
         """Process a signal to extract the core decision."""
         return self.signal_processor.process_signal(full_signal, stock_symbol)
+
+    # -----------------------------------------------------------------------
+    # Checkpoint / Resume
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def list_checkpoints(ticker: Optional[str] = None) -> list[dict]:
+        """List saved checkpoints, optionally filtered by ticker."""
+        return list_checkpoints(ticker)
+
+    @staticmethod
+    def clean_checkpoints(max_age_days: int = 30) -> int:
+        """Remove checkpoints older than max_age_days. Returns count removed."""
+        return clean_old_checkpoints(max_age_days)
