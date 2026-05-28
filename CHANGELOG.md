@@ -13,9 +13,16 @@
   - `currency_map` 新增 `CRYPTO → USDT`
   - 买入持仓 `available_qty` 对非 CN 市场（含 CRYPTO）立即可用
   - 卖出逻辑 `new_qty <= 0` 替代 `== 0`（兼容浮点精度）
+  - 账户/持仓汇总全面扩展 USDT 货币字段
+- `tradingagents/utils/stock_utils.py`:
+  - 新增 `StockMarket.CRYPTO` 枚举值
+  - `identify_stock_market()` 优先识别加密货币关键字
+  - `get_currency_info()` / `get_data_source()` / `get_market_info()` 覆盖 CRYPTO
+  - `get_market_info()` 返回 `is_crypto` 字段
 
 ### 涉及文件
 - `app/routers/paper.py`
+- `tradingagents/utils/stock_utils.py`
 
 ### 回滚方法
 ```bash

@@ -17,6 +17,7 @@ class StockMarket(Enum):
     CHINA_A = "china_a"      # 中国A股
     HONG_KONG = "hong_kong"  # 港股
     US = "us"                # 美股
+    CRYPTO = "crypto"        # 加密货币（24/7 交易）
     UNKNOWN = "unknown"      # 未知
 
 
@@ -38,6 +39,11 @@ class StockUtils:
             return StockMarket.UNKNOWN
 
         ticker = str(ticker).strip().upper()
+
+        # 加密货币：含 USDT/BTC/ETH/SOL/BNB 关键字（优先于美股纯字母规则）
+        _CRYPTO_KW = ["USDT", "BTC", "ETH", "SOL", "BNB"]
+        if any(kw in ticker for kw in _CRYPTO_KW):
+            return StockMarket.CRYPTO
 
         # 中国A股：6位数字
         if re.match(r'^\d{6}$', ticker):
@@ -111,6 +117,8 @@ class StockUtils:
             return "港币", "HK$"
         elif market == StockMarket.US:
             return "美元", "$"
+        elif market == StockMarket.CRYPTO:
+            return "USDT", "$"
         else:
             return "未知", "?"
     
@@ -133,6 +141,8 @@ class StockUtils:
             return "yahoo_finance"  # 港股使用Yahoo Finance
         elif market == StockMarket.US:
             return "yahoo_finance"  # 美股使用Yahoo Finance
+        elif market == StockMarket.CRYPTO:
+            return "binance"        # 加密货币使用 Binance
         else:
             return "unknown"
     
@@ -181,9 +191,10 @@ class StockUtils:
             StockMarket.CHINA_A: "中国A股",
             StockMarket.HONG_KONG: "港股",
             StockMarket.US: "美股",
+            StockMarket.CRYPTO: "加密货币",
             StockMarket.UNKNOWN: "未知市场"
         }
-        
+
         return {
             "ticker": ticker,
             "market": market.value,
@@ -193,7 +204,8 @@ class StockUtils:
             "data_source": data_source,
             "is_china": market == StockMarket.CHINA_A,
             "is_hk": market == StockMarket.HONG_KONG,
-            "is_us": market == StockMarket.US
+            "is_us": market == StockMarket.US,
+            "is_crypto": market == StockMarket.CRYPTO
         }
 
 

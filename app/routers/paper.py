@@ -355,6 +355,8 @@ async def get_account(current_user: dict = Depends(get_current_user)):
         # 获取最新价
         last = await _get_last_price(code, market)
         mkt_value = round((last or 0.0) * qty, 2)
+        if currency not in positions_value_by_currency:
+            positions_value_by_currency[currency] = 0.0
         positions_value_by_currency[currency] += mkt_value
 
         detailed_positions.append({
