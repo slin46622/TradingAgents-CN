@@ -372,6 +372,25 @@ const routes: RouteRecordRaw[] = [
   },
 
   {
+    path: '/live',
+    name: 'LiveTrading',
+    component: () => import('@/layouts/BasicLayout.vue'),
+    meta: {
+      title: '实盘交易',
+      icon: 'TrendCharts',
+      requiresAuth: true,
+      transition: 'slide-up'
+    },
+    children: [
+      {
+        path: '',
+        name: 'LiveTradingHome',
+        component: () => import('@/views/LiveTrading/index.vue'),
+        meta: { title: '实盘交易', requiresAuth: true }
+      }
+    ]
+  },
+  {
     path: '/about',
     name: 'About',
     component: () => import('@/views/About/index.vue'),

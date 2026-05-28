@@ -47,6 +47,11 @@
       <template #title>模拟交易</template>
     </el-menu-item>
 
+    <el-menu-item index="/live">
+      <el-icon><Coin /></el-icon>
+      <template #title>实盘交易</template>
+    </el-menu-item>
+
     <el-menu-item index="/backtest">
       <el-icon><DataAnalysis /></el-icon>
       <template #title>回测系统</template>
@@ -119,7 +124,8 @@ import {
   Setting,
   InfoFilled,
   CreditCard,
-  DataAnalysis
+  DataAnalysis,
+  Coin
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
