@@ -1472,6 +1472,17 @@ class SimpleAnalysisService:
 
             logger.info(f"🚀 准备调用 trading_graph.propagate，progress_callback={graph_progress_callback}")
 
+            # 注入历史交易记忆，让 Agent 学习过往决策
+            try:
+                from tradingagents.agents.utils.layered_memory import LayeredMemory
+                _mem = LayeredMemory(trading_graph.config)
+                _memory_ctx = _mem.get_context(request.stock_code, n_short=3, n_medium=2, n_long=3)
+                if _memory_ctx and hasattr(trading_graph, 'curr_state') and trading_graph.curr_state is not None:
+                    trading_graph.curr_state["past_context"] = _memory_ctx
+                    logger.info(f"📚 [记忆闭环] 已注入 {request.stock_code} 的历史交易记忆")
+            except Exception as _me:
+                logger.debug(f"[记忆闭环] 注入记忆失败（不影响分析）: {_me}")
+
             # 执行实际分析，传递进度回调和task_id
             state, decision = trading_graph.propagate(
                 request.stock_code,
