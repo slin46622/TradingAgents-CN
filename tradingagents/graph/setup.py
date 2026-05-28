@@ -192,6 +192,13 @@ class GraphSetup:
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
+        if "crypto" in selected_analysts:
+            from tradingagents.agents.analysts.crypto_analyst import create_crypto_analyst
+            analyst_nodes["crypto"] = create_crypto_analyst(self.quick_thinking_llm, self.toolkit)
+            delete_nodes["crypto"] = create_msg_delete()
+            tool_nodes["crypto"] = self.tool_nodes.get("crypto")
+            logger.info("🪙 [图配置] 加密货币分析师已加入图")
+
         if "macro" in selected_analysts:
             macro_analyst = MacroEventAnalyst(self.quick_thinking_llm)
             analyst_nodes["macro"] = macro_analyst.create_node()

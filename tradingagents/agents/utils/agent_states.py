@@ -64,6 +64,7 @@ class AgentState(MessagesState):
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
     macro_event_report: Annotated[str, "Report from the Macro Event Analyst"]
+    crypto_report: Annotated[str, "Report from the Crypto Analyst"]
 
     # LayeredMemory: past decisions context injected into Portfolio Manager
     past_context: Annotated[str, "Historical decision context from LayeredMemory"]

@@ -198,6 +198,21 @@ class ConditionalLogic:
         logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear Fundamentals")
         return "Msg Clear Fundamentals"
 
+    def should_continue_crypto(self, state: AgentState):
+        """Crypto analyst calls REST directly — always route straight to clear."""
+        crypto_report = state.get("crypto_report", "")
+        if crypto_report and len(crypto_report) > 50:
+            logger.info("🔀 [条件判断] ✅ 加密货币报告已完成，返回: Msg Clear Crypto")
+            return "Msg Clear Crypto"
+        messages = state.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                logger.info("🔀 [条件判断] 🔧 检测到tool_calls，返回: tools_crypto")
+                return "tools_crypto"
+        logger.info("🔀 [条件判断] ✅ 无工具调用，返回: Msg Clear Crypto")
+        return "Msg Clear Crypto"
+
     def should_continue_macro(self, state: AgentState):
         """Macro event analyst never uses tools — always route to clear."""
         macro_report = state.get("macro_event_report", "")
