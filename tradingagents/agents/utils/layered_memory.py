@@ -42,6 +42,35 @@ from tradingagents.utils.logging_init import get_logger
 
 logger = get_logger("agents.utils.layered_memory")
 
+
+# ---------------------------------------------------------------------------
+# Direction extraction helpers
+# ---------------------------------------------------------------------------
+
+_BUY_KW = {
+    "买入", "看涨", "做多", "推荐买入", "增持", "超配", "强力买入",
+    "bullish", "buy", "strong buy", "overweight", "outperform", "上涨", "positive",
+}
+_SELL_KW = {
+    "卖出", "看跌", "做空", "减持", "回避", "卖出建议", "强力卖出",
+    "bearish", "sell", "strong sell", "underweight", "underperform", "下跌", "negative",
+}
+
+
+def extract_direction(text: str) -> str:
+    """Infer analyst directional bias from report text.
+
+    Returns 'buy', 'sell', or 'hold'.
+    """
+    t = text.lower()
+    buy_count = sum(1 for kw in _BUY_KW if kw in t)
+    sell_count = sum(1 for kw in _SELL_KW if kw in t)
+    if buy_count > sell_count:
+        return "buy"
+    if sell_count > buy_count:
+        return "sell"
+    return "hold"
+
 # Default storage root — overridable via env var
 _DEFAULT_ROOT = Path.home() / ".tradingagents" / "layered_memory"
 _MEMORY_ROOT = Path(os.getenv("TRADINGAGENTS_MEMORY_ROOT", str(_DEFAULT_ROOT)))
@@ -166,6 +195,16 @@ class LongTermMemory:
         outcome_date TEXT,
         reflection  TEXT,
         created_at  TEXT    NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS analyst_signals (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker       TEXT    NOT NULL,
+        trade_date   TEXT    NOT NULL,
+        analyst_name TEXT    NOT NULL,
+        direction    TEXT    NOT NULL,
+        was_correct  INTEGER,
+        outcome_date TEXT,
+        created_at   TEXT    NOT NULL
     )
     """
 
@@ -177,7 +216,10 @@ class LongTermMemory:
 
     def _init_db(self) -> None:
         with sqlite3.connect(self._db) as conn:
-            conn.execute(self._DDL)
+            for stmt in self._DDL.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    conn.execute(stmt)
             conn.commit()
 
     def record_decision(self, ticker: str, trade_date: str,
@@ -221,6 +263,81 @@ class LongTermMemory:
                 ).fetchall()
             return [dict(r) for r in same] + [dict(r) for r in cross]
 
+    def record_analyst_signals(self, ticker: str, trade_date: str,
+                                signals: dict) -> None:
+        """Store per-analyst directional signals for a given trade date.
+
+        *signals* maps analyst_name → direction ('buy'|'sell'|'hold').
+        """
+        now = datetime.now().isoformat()
+        with self._lock:
+            with sqlite3.connect(self._db) as conn:
+                for analyst, direction in signals.items():
+                    conn.execute(
+                        "INSERT INTO analyst_signals "
+                        "(ticker, trade_date, analyst_name, direction, created_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (ticker, trade_date, analyst, direction, now),
+                    )
+                conn.commit()
+
+    def update_analyst_outcomes(self, ticker: str, actual_direction: str,
+                                outcome_date: str = "") -> None:
+        """Mark all pending signals for *ticker* as correct or incorrect.
+
+        Called when a position is closed so the return direction is known.
+        *actual_direction*: 'buy' if price went up (profit), 'sell' if down (loss).
+        """
+        outcome_date = outcome_date or datetime.now().strftime("%Y-%m-%d")
+        with self._lock:
+            with sqlite3.connect(self._db) as conn:
+                rows = conn.execute(
+                    "SELECT id, direction FROM analyst_signals "
+                    "WHERE ticker=? AND was_correct IS NULL",
+                    (ticker,),
+                ).fetchall()
+                for row_id, direction in rows:
+                    correct = 1 if direction == actual_direction else 0
+                    conn.execute(
+                        "UPDATE analyst_signals SET was_correct=?, outcome_date=? WHERE id=?",
+                        (correct, outcome_date, row_id),
+                    )
+                conn.commit()
+
+    def get_analyst_accuracy(self, window: int = 20) -> dict:
+        """Return accuracy stats per analyst over the last *window* resolved signals.
+
+        Returns dict mapping analyst_name → {'correct': int, 'total': int, 'accuracy': float}.
+        """
+        with self._lock:
+            with sqlite3.connect(self._db) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT analyst_name, was_correct FROM analyst_signals "
+                    "WHERE was_correct IS NOT NULL "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (window * 10,),
+                ).fetchall()
+
+        stats: dict = {}
+        # count most recent *window* per analyst
+        per_analyst: dict = {}
+        for row in rows:
+            name = row["analyst_name"]
+            per_analyst.setdefault(name, [])
+            if len(per_analyst[name]) < window:
+                per_analyst[name].append(row["was_correct"])
+
+        for name, results in per_analyst.items():
+            total = len(results)
+            correct = sum(results)
+            stats[name] = {
+                "correct": correct,
+                "total": total,
+                "accuracy": correct / total if total > 0 else 0.5,
+            }
+        return stats
+
 
 class LayeredMemory:
     """Unified three-tier memory for the Portfolio Manager.
@@ -254,6 +371,51 @@ class LayeredMemory:
     def update_outcome(self, ticker: str, trade_date: str,
                        return_pct: float, reflection: str) -> None:
         self.long.update_outcome(ticker, trade_date, return_pct, reflection)
+
+    def record_analyst_signals(self, ticker: str, trade_date: str,
+                                signals: dict) -> None:
+        self.long.record_analyst_signals(ticker, trade_date, signals)
+
+    def update_analyst_outcomes(self, ticker: str, actual_direction: str,
+                                outcome_date: str = "") -> None:
+        self.long.update_analyst_outcomes(ticker, actual_direction, outcome_date)
+
+    def get_analyst_weights(self, window: int = 20) -> dict:
+        """Return weight coefficient per analyst based on rolling accuracy.
+
+        weight = 0.5 + accuracy  →  range [0.5, 1.5]
+        Analysts with no history default to 1.0 (neutral).
+        """
+        stats = self.long.get_analyst_accuracy(window=window)
+        weights = {}
+        for analyst, s in stats.items():
+            weights[analyst] = round(0.5 + s["accuracy"], 3)
+        return weights
+
+    def get_analyst_weights_context(self, window: int = 20) -> str:
+        """Return a formatted string for injection into the Portfolio Manager prompt."""
+        stats = self.long.get_analyst_accuracy(window=window)
+        if not stats:
+            return ""
+        lines = [f"## 分析师准确率权重（最近 {window} 次记录）"]
+        _name_map = {
+            "market": "市场分析师",
+            "fundamentals": "基本面分析师",
+            "news": "新闻分析师",
+            "sentiment": "社媒分析师",
+            "macro": "宏观事件分析师",
+            "crypto": "加密货币分析师",
+            "cn_social": "A股社交情绪分析师",
+        }
+        for analyst, s in sorted(stats.items()):
+            display = _name_map.get(analyst, analyst)
+            weight = round(0.5 + s["accuracy"], 2)
+            lines.append(
+                f"  - {display}: 准确率 {s['accuracy']*100:.0f}%"
+                f"（{s['correct']}/{s['total']}）→ 权重系数 {weight:.2f}x"
+            )
+        lines.append("综合分析时，请按上述权重调整各分析师观点的参考比重。")
+        return "\n".join(lines)
 
     def get_context(self, ticker: str,
                     n_short: int = 5, n_medium: int = 3, n_long: int = 5) -> str:

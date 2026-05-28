@@ -21,15 +21,18 @@ def _write_sell_to_layered_memory(stock_code: str, avg_cost: float, sell_price: 
         mem.record_decision(
             ticker=stock_code,
             trade_date=trade_date,
-            action=f"模拟交易平仓：买入均价{avg_cost:.4f}→卖出{sell_price:.4f}，持仓{hold_days}天",
-            realized_return=round(profit_pct, 4),
+            decision=f"模拟交易平仓：买入均价{avg_cost:.4f}→卖出{sell_price:.4f}，持仓{hold_days}天",
+            reasoning=f"realized_return={profit_pct:.4f}",
         )
         mem.add_medium(
             ticker=stock_code,
-            content=f"模拟交易结果：持仓{hold_days}天，盈亏{profit_pct*100:.1f}%（买入{avg_cost:.4f}→卖出{sell_price:.4f}）",
+            summary=f"模拟交易结果：持仓{hold_days}天，盈亏{profit_pct*100:.1f}%（买入{avg_cost:.4f}→卖出{sell_price:.4f}）",
             trade_date=trade_date,
         )
-        logger.info(f"📝 [记忆闭环] {stock_code} 交易结果已写入 layered_memory，盈亏={profit_pct*100:.1f}%")
+        # 更新分析师准确率：盈利→买入方向正确，亏损→卖出方向正确
+        actual_direction = "buy" if profit_pct >= 0 else "sell"
+        mem.update_analyst_outcomes(ticker=stock_code, actual_direction=actual_direction, outcome_date=trade_date)
+        logger.info(f"📝 [记忆闭环] {stock_code} 交易结果已写入 layered_memory，盈亏={profit_pct*100:.1f}%，方向={actual_direction}")
     except Exception as e:
         logger.warning(f"⚠️ [记忆闭环] 写入 layered_memory 失败（不影响交易）: {e}")
 
