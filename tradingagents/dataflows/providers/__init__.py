@@ -78,6 +78,15 @@ except ImportError:
     OPTIMIZED_US_AVAILABLE = OptimizedUSDataProvider is not None
     FINNHUB_AVAILABLE = get_data_in_range is not None
 
+# 加密货币提供器
+try:
+    from .crypto import BinanceProvider, CoinGeckoProvider, BINANCE_AVAILABLE, COINGECKO_AVAILABLE
+except ImportError:
+    BinanceProvider = None
+    CoinGeckoProvider = None
+    BINANCE_AVAILABLE = False
+    COINGECKO_AVAILABLE = False
+
 # 其他提供器（预留）
 try:
     from .yahoo_provider import YahooProvider
@@ -106,6 +115,12 @@ __all__ = [
     'AKSHARE_AVAILABLE',
     'TUSHARE_AVAILABLE',
     'BAOSTOCK_AVAILABLE',
+
+    # 加密货币
+    'BinanceProvider',
+    'CoinGeckoProvider',
+    'BINANCE_AVAILABLE',
+    'COINGECKO_AVAILABLE',
 
     # 港股
     'ImprovedHKStockProvider',
