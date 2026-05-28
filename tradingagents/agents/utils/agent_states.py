@@ -63,6 +63,10 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    macro_event_report: Annotated[str, "Report from the Macro Event Analyst"]
+
+    # LayeredMemory: past decisions context injected into Portfolio Manager
+    past_context: Annotated[str, "Historical decision context from LayeredMemory"]
 
     # 🔧 死循环修复: 工具调用计数器
     market_tool_call_count: Annotated[int, "Market analyst tool call counter"]

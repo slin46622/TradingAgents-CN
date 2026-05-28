@@ -22,6 +22,7 @@ from tradingagents.agents import (
     create_social_media_analyst,
     create_trader,
 )
+from tradingagents.agents.analysts.macro_event_analyst import MacroEventAnalyst
 from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.agents.utils.agent_utils import Toolkit
 
@@ -49,6 +50,7 @@ class GraphSetup:
         conditional_logic: ConditionalLogic,
         config: Dict[str, Any] = None,
         react_llm = None,
+        layered_memory = None,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
@@ -63,6 +65,7 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
         self.config = config or {}
         self.react_llm = react_llm
+        self.layered_memory = layered_memory
 
     def setup_graph(
         self, selected_analysts=["market", "social", "news", "fundamentals"]
@@ -153,11 +156,49 @@ class GraphSetup:
                 logger.debug(f"📊 [DEBUG] 使用标准基本面分析师")
 
             # 所有LLM都使用标准分析师（包含强制工具调用机制）
-            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
+            _base_fundamentals = create_fundamentals_analyst(
                 self.quick_thinking_llm, self.toolkit
             )
+            _cot_llm = self.quick_thinking_llm  # capture for closure
+
+            def _fundamentals_with_cot(state, _base=_base_fundamentals, _llm=_cot_llm):
+                """Wrap fundamentals analyst: run CoT valuation summary after report is ready."""
+                result = _base(state)
+                report = result.get("fundamentals_report", "")
+                last_msg = state.get("messages", [{}])[-1]
+                has_pending_tools = (
+                    hasattr(last_msg, "tool_calls") and last_msg.tool_calls
+                )
+                # Only enrich on the FINAL call (report populated, no pending tool calls)
+                if report and len(report) > 500 and not has_pending_tools:
+                    try:
+                        from tradingagents.agents.utils.cot_decomposer import FinancialCoTDecomposer
+                        decomposer = FinancialCoTDecomposer(_llm)
+                        valuation_summary = decomposer.get_sub_analysis(
+                            ticker=state["company_of_interest"],
+                            context=report[:3000],
+                            trade_date=state["trade_date"],
+                            question_id="valuation",
+                        )
+                        result["fundamentals_report"] = (
+                            report + "\n\n---\n## CoT 估值分析（自动增强）\n" + valuation_summary
+                        )
+                        logger.info(f"📊 [CoT] 估值子分析已追加到基本面报告")
+                    except Exception as e:
+                        logger.debug(f"📊 [CoT] 估值分析跳过: {e}")
+                return result
+
+            analyst_nodes["fundamentals"] = _fundamentals_with_cot
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
+
+        if "macro" in selected_analysts:
+            macro_analyst = MacroEventAnalyst(self.quick_thinking_llm)
+            analyst_nodes["macro"] = macro_analyst.create_node()
+            delete_nodes["macro"] = create_msg_delete()
+            # macro analyst never calls tools; provide a no-op ToolNode
+            tool_nodes["macro"] = ToolNode([])
+            logger.info("🌍 [图配置] 宏观事件分析师已加入图")
 
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(
@@ -179,8 +220,10 @@ class GraphSetup:
             self.deep_thinking_llm, self.risk_manager_memory
         )
 
-        # Create portfolio manager node (structured output decision synthesis)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+        # Create portfolio manager node (with LayeredMemory for historical context)
+        portfolio_manager_node = create_portfolio_manager(
+            self.deep_thinking_llm, layered_memory=self.layered_memory
+        )
 
         # Create workflow
         workflow = StateGraph(AgentState)

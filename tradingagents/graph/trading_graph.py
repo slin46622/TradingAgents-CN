@@ -15,6 +15,7 @@ from langgraph.prebuilt import ToolNode
 from tradingagents.agents import Toolkit
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.agents.utils.memory import FinancialSituationMemory
+from tradingagents.agents.utils.layered_memory import LayeredMemory
 
 # 导入统一日志系统
 from tradingagents.utils.logging_init import get_logger
@@ -562,6 +563,13 @@ class TradingAgentsGraph:
         logger.info(f"   - max_debate_rounds: {self.conditional_logic.max_debate_rounds}")
         logger.info(f"   - max_risk_discuss_rounds: {self.conditional_logic.max_risk_discuss_rounds}")
 
+        # Initialize LayeredMemory (FinMem-style 3-tier memory for Portfolio Manager)
+        try:
+            self.layered_memory = LayeredMemory(self.config)
+        except Exception as e:
+            logger.warning(f"⚠️ [LayeredMemory] 初始化失败，禁用分层记忆: {e}")
+            self.layered_memory = None
+
         self.graph_setup = GraphSetup(
             self.quick_thinking_llm,
             self.deep_thinking_llm,
@@ -575,6 +583,7 @@ class TradingAgentsGraph:
             self.conditional_logic,
             self.config,
             getattr(self, 'react_llm', None),
+            layered_memory=self.layered_memory,
         )
 
         self.propagator = Propagator()
@@ -682,7 +691,8 @@ class TradingAgentsGraph:
         # Initialize state
         logger.debug(f"🔍 [GRAPH DEBUG] 创建初始状态，传递参数: company_name='{company_name}', trade_date='{trade_date}'")
         init_agent_state = self.propagator.create_initial_state(
-            company_name, trade_date
+            company_name, trade_date,
+            asset_type=self.config.get("asset_type", "stock")
         )
         logger.debug(f"🔍 [GRAPH DEBUG] 初始状态中的company_of_interest: '{init_agent_state.get('company_of_interest', 'NOT_FOUND')}'")
         logger.debug(f"🔍 [GRAPH DEBUG] 初始状态中的trade_date: '{init_agent_state.get('trade_date', 'NOT_FOUND')}'")
@@ -692,6 +702,10 @@ class TradingAgentsGraph:
         total_start_time = time.time()  # 总体开始时间
         current_node_start = None  # 当前节点开始时间
         current_node_name = None  # 当前节点名称
+
+        # Reset token accumulator
+        from tradingagents.llm_adapters.openai_compatible_base import reset_token_accumulator, get_token_accumulator
+        reset_token_accumulator()
 
         # 保存task_id用于后续保存性能数据
         self._current_task_id = task_id
@@ -850,6 +864,12 @@ class TradingAgentsGraph:
         # 处理决策并添加模型信息
         decision = self.process_signal(final_state["final_trade_decision"], company_name)
         decision['model_info'] = model_info
+
+        # Add token usage info
+        token_info = get_token_accumulator()
+        decision['input_tokens'] = token_info.get('input_tokens', 0)
+        decision['output_tokens'] = token_info.get('output_tokens', 0)
+        decision['total_tokens'] = token_info.get('input_tokens', 0) + token_info.get('output_tokens', 0)
 
         # Return decision and processed signal
         return final_state, decision

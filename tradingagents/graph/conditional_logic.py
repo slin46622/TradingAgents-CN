@@ -198,6 +198,15 @@ class ConditionalLogic:
         logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear Fundamentals")
         return "Msg Clear Fundamentals"
 
+    def should_continue_macro(self, state: AgentState):
+        """Macro event analyst never uses tools — always route to clear."""
+        macro_report = state.get("macro_event_report", "")
+        if macro_report and len(macro_report) > 50:
+            logger.info("🔀 [条件判断] ✅ 宏观事件报告已完成，返回: Msg Clear Macro")
+            return "Msg Clear Macro"
+        logger.info("🔀 [条件判断] ✅ 宏观事件分析师无工具调用，返回: Msg Clear Macro")
+        return "Msg Clear Macro"
+
     def should_continue_debate(self, state: AgentState) -> str:
         """Determine if debate should continue."""
         current_count = state["investment_debate_state"]["count"]

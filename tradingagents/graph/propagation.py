@@ -56,6 +56,8 @@ class Propagator:
             "fundamentals_report": "",
             "sentiment_report": "",
             "news_report": "",
+            "macro_event_report": "",
+            "past_context": "",
         }
 
     def get_graph_args(self, use_progress_callback: bool = False) -> Dict[str, Any]:

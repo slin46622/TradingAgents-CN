@@ -18,18 +18,33 @@ from tradingagents.agents.utils.structured import (
 )
 
 
-def create_portfolio_manager(llm):
+def create_portfolio_manager(llm, layered_memory=None):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
     def portfolio_manager_node(state) -> dict:
-        instrument_context = build_instrument_context(state["company_of_interest"])
+        ticker = state["company_of_interest"]
+        trade_date = state["trade_date"]
+        instrument_context = build_instrument_context(ticker)
 
         history = state["risk_debate_state"]["history"]
         risk_debate_state = state["risk_debate_state"]
         research_plan = state["investment_plan"]
         trader_plan = state["trader_investment_plan"]
 
-        past_context = state.get("past_context", "")
+        # LayeredMemory: inject historical decision context
+        if layered_memory is not None:
+            try:
+                layered_ctx = layered_memory.get_context(ticker, n_short=5, n_medium=3, n_long=5)
+                if layered_ctx:
+                    state_past = state.get("past_context", "")
+                    past_context = f"{layered_ctx}\n{state_past}".strip()
+                else:
+                    past_context = state.get("past_context", "")
+            except Exception:
+                past_context = state.get("past_context", "")
+        else:
+            past_context = state.get("past_context", "")
+
         lessons_line = (
             f"- Lessons from prior decisions and outcomes:\n{past_context}\n"
             if past_context
@@ -80,6 +95,20 @@ Be decisive and ground every conclusion in specific evidence from the analysts."
             "current_neutral_response": risk_debate_state.get("current_neutral_response", ""),
             "count": risk_debate_state.get("count", 0),
         }
+
+        # LayeredMemory: save decision to long-term store for future runs
+        if layered_memory is not None:
+            try:
+                # Extract direction keyword for storage
+                decision_short = final_trade_decision[:200] if final_trade_decision else "unknown"
+                layered_memory.record_decision(
+                    ticker=ticker,
+                    trade_date=trade_date,
+                    decision=decision_short,
+                    reasoning=research_plan[:300] if research_plan else "",
+                )
+            except Exception:
+                pass
 
         return {
             "risk_debate_state": new_risk_debate_state,

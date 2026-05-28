@@ -43,7 +43,7 @@ def _get_company_name(ticker: str, market_info: dict) -> str:
                 # 降级方案：尝试直接从数据源管理器获取
                 logger.warning(f"⚠️ [市场分析师] 无法从统一接口解析股票名称: {ticker}，尝试降级方案")
                 try:
-                    from tradingagents.dataflows.data_source_manager import get_china_stock_info_unified as get_info_dict
+                    from tradingagents.dataflows.unified_data_source import get_china_stock_info_unified as get_info_dict
                     info_dict = get_info_dict(ticker)
                     if info_dict and info_dict.get('name'):
                         company_name = info_dict['name']
@@ -122,6 +122,18 @@ def create_market_analyst(llm, toolkit):
         instrument_context = build_instrument_context(ticker)
         logger.debug(f"📈 [DEBUG] 公司名称: {ticker} -> {company_name}")
 
+        # FactorMiner: pre-compute technical factors and inject into prompt
+        factor_block = ""
+        try:
+            from tradingagents.agents.analysts.factor_miner import _compute_basic_factors
+            raw_factors = _compute_basic_factors(ticker, current_date)
+            if raw_factors and "计算错误" not in raw_factors and "error" not in raw_factors:
+                factor_lines = "\n".join(f"  - {k}: {v}" for k, v in raw_factors.items())
+                factor_block = f"\n\n📐 **预计算技术因子（真实数值，供参考）：**\n{factor_lines}"
+                logger.info(f"📐 [FactorMiner] 已注入 {len(raw_factors)} 个因子到市场分析师")
+        except Exception as e:
+            logger.debug(f"📐 [FactorMiner] 因子预计算跳过: {e}")
+
         # 统一使用 get_stock_market_data_unified 工具
         # 该工具内部会自动识别股票类型（A股/港股/美股）并调用相应的数据源
         logger.info(f"📊 [市场分析师] 使用统一市场数据工具，自动识别股票类型")
@@ -189,6 +201,7 @@ def create_market_analyst(llm, toolkit):
                     "- 不要在标题中使用\"技术分析报告\"等自创标题\n"
                     "- 如果你有明确的技术面投资建议（买入/持有/卖出），请在投资建议部分明确标注\n"
                     "- 不要使用'最终交易建议'前缀，因为最终决策需要综合所有分析师的意见\n"
+                    "{factor_block}\n"
                     "\n"
                     "请使用中文，基于真实数据进行分析。",
                 ),
@@ -215,6 +228,7 @@ def create_market_analyst(llm, toolkit):
         prompt = prompt.partial(currency_name=market_info['currency_name'])
         prompt = prompt.partial(currency_symbol=market_info['currency_symbol'])
         prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(factor_block=factor_block)
 
         # 添加详细日志
         logger.info(f"📊 [市场分析师] LLM类型: {llm.__class__.__name__}")
