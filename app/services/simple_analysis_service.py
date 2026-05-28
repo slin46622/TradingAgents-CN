@@ -562,6 +562,58 @@ def create_analysis_config(
     return config
 
 
+def _fire_telegram_notification(
+    user_id: Optional[str],
+    symbol: str,
+    formatted_decision: Any,
+    task_id: str,
+) -> None:
+    """后台线程发送 Telegram 信号推送，失败不影响分析结果。"""
+    if not user_id or not isinstance(formatted_decision, dict):
+        return
+
+    import threading
+
+    def _send() -> None:
+        try:
+            import asyncio
+            from app.core.database import get_mongo_db
+            from tradingagents.notification.telegram import TelegramNotifier
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            async def _async_send() -> None:
+                db = get_mongo_db()
+                cfg = await db["telegram_config"].find_one({"user_id": user_id})
+                if not cfg or not cfg.get("enabled") or not cfg.get("bot_token"):
+                    return
+                notifier = TelegramNotifier(
+                    bot_token=cfg["bot_token"],
+                    chat_id=cfg["chat_id"],
+                )
+                action = formatted_decision.get("action", "持有")
+                confidence = formatted_decision.get("confidence", 0.5) or 0.5
+                reasoning = formatted_decision.get("reasoning", "暂无")
+                reason_short = reasoning[:80] + "…" if len(reasoning) > 80 else reasoning
+                notifier.send_signal(
+                    symbol=symbol,
+                    advice=action,
+                    confidence=float(confidence),
+                    reason=reason_short,
+                    analysis_id=task_id,
+                )
+
+            try:
+                loop.run_until_complete(_async_send())
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.warning("[Telegram] 后台通知失败 task=%s: %s", task_id, e)
+
+    threading.Thread(target=_send, daemon=True, name=f"telegram-notify-{task_id[:8]}").start()
+
+
 class SimpleAnalysisService:
     """简化的股票分析服务类"""
 
@@ -1808,6 +1860,14 @@ class SimpleAnalysisService:
             }
 
             logger.info(f"✅ [线程池] 分析完成: {task_id} - 耗时{execution_time:.2f}秒")
+
+            # 分析完成后发送 Telegram 通知（后台线程，不阻塞结果返回）
+            _fire_telegram_notification(
+                user_id=getattr(request, "user_id", None) or getattr(request, "user", {}).get("id"),
+                symbol=request.stock_code,
+                formatted_decision=formatted_decision,
+                task_id=task_id,
+            )
 
             # 🔍 调试：检查返回的result结构
             logger.info(f"🔍 [DEBUG] 返回result的键: {list(result.keys())}")

@@ -347,6 +347,15 @@ const routes: RouteRecordRaw[] = [
           title: '定时任务',
           requiresAuth: true
         }
+      },
+      {
+        path: 'telegram',
+        name: 'TelegramConfig',
+        component: () => import('@/views/Settings/TelegramConfig.vue'),
+        meta: {
+          title: 'Telegram 通知',
+          requiresAuth: true
+        }
       }
     ]
   },
