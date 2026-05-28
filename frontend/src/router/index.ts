@@ -70,6 +70,20 @@ const routes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/backtest',
+    name: 'Backtest',
+    component: () => import('@/layouts/BasicLayout.vue'),
+    meta: { title: '回测系统', icon: 'DataAnalysis', requiresAuth: true, transition: 'fade' },
+    children: [
+      {
+        path: '',
+        name: 'BacktestHome',
+        component: () => import('@/views/Backtest/index.vue'),
+        meta: { title: '回测系统', requiresAuth: true }
+      }
+    ]
+  },
+  {
     path: '/screening',
     name: 'StockScreening',
     component: () => import('@/layouts/BasicLayout.vue'),

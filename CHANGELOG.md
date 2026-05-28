@@ -1,13 +1,15 @@
 # Changelog
 
-## 2026-05-29 — feat/agent-memory-feedback (#4)
+## 2026-05-29 — feat/backtest-enhanced (#11) on top of feat/agent-memory-feedback (#4)
+
+### 新增
+- `tradingagents/backtest/engine.py` — `PerformanceMetrics` dataclass，`calculate_performance()` 方法
+- `frontend/src/views/Backtest/index.vue` — 回测系统前端页面
 
 ### 修改
-- `app/routers/paper.py` — 新增 `_write_sell_to_layered_memory()` 辅助函数，平仓后自动写入 layered_memory
-- `app/services/simple_analysis_service.py` — 分析启动前注入同标的历史交易记忆至 Agent 上下文
-
-### 效果
-- 完整闭环：模拟交易平仓 → 写入长期/中期记忆 → 下次分析同标的时 Agent 读到历史决策
+- `tradingagents/backtest/engine.py` — `EvaluationConfig` 新增 commission_rate/slippage_rate
+- `frontend/src/router/index.ts` — 新增 /backtest 路由
+- `frontend/src/components/Layout/SidebarMenu.vue` — 左侧菜单新增「回测系统」
 
 ### 回滚命令
 ```bash
