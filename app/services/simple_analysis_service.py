@@ -1206,10 +1206,22 @@ class SimpleAnalysisService:
             market_type = request.parameters.market_type if request.parameters else "A股"
             logger.info(f"📊 [市场类型] 使用市场类型: {market_type}")
 
+            # 确定 selected_analysts，并对 A 股自动注入 cn_social 分析师
+            import re as _re
+            selected_analysts = list(
+                request.parameters.selected_analysts if request.parameters else ["market", "fundamentals"]
+            )
+            stock_code_for_check = request.stock_code if hasattr(request, "stock_code") else ""
+            # 纯6位数字代码视为 A 股
+            if _re.match(r"^\d{6}$", str(stock_code_for_check).strip()):
+                if "cn_social" not in selected_analysts:
+                    selected_analysts = selected_analysts + ["cn_social"]
+                    logger.info(f"📱 [A股自动注入] {stock_code_for_check} 识别为A股，已自动加入 cn_social 分析师")
+
             # 创建分析配置（支持混合模式）
             config = create_analysis_config(
                 research_depth=research_depth,
-                selected_analysts=request.parameters.selected_analysts if request.parameters else ["market", "fundamentals"],
+                selected_analysts=selected_analysts,
                 quick_model=quick_model,
                 deep_model=deep_model,
                 llm_provider=quick_provider,  # 主要使用快速模型的供应商
@@ -1290,6 +1302,8 @@ class SimpleAnalysisService:
                             progress_tracker.update_progress("📰 新闻分析师正在分析")
                         elif analyst == "social":
                             progress_tracker.update_progress("💬 社交媒体分析师正在分析")
+                        elif analyst == "cn_social":
+                            progress_tracker.update_progress("📱 A股社交情绪分析师正在分析")
 
                     # 研究团队阶段
                     time.sleep(10)
