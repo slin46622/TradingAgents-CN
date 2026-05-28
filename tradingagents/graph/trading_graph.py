@@ -656,6 +656,8 @@ class TradingAgentsGraph:
                     self.toolkit.get_china_fundamentals,
                 ]
             ),
+            # 加密分析师直接调 REST，不依赖 LangChain 工具；占位 ToolNode 保持图结构一致
+            "crypto": ToolNode([]),
         }
 
     def propagate(self, company_name, trade_date, progress_callback=None, task_id=None, resume_from=None):
@@ -916,16 +918,19 @@ class TradingAgentsGraph:
                 'Fundamentals Analyst': "💼 基本面分析师",
                 'News Analyst': "📰 新闻分析师",
                 'Social Analyst': "💬 社交媒体分析师",
+                'Crypto Analyst': "🪙 加密货币分析师",
                 # 工具节点（不发送进度更新，避免重复）
                 'tools_market': None,
                 'tools_fundamentals': None,
                 'tools_news': None,
                 'tools_social': None,
+                'tools_crypto': None,
                 # 消息清理节点（不发送进度更新）
                 'Msg Clear Market': None,
                 'Msg Clear Fundamentals': None,
                 'Msg Clear News': None,
                 'Msg Clear Social': None,
+                'Msg Clear Crypto': None,
                 # 研究员节点
                 'Bull Researcher': "🐂 看涨研究员",
                 'Bear Researcher': "🐻 看跌研究员",

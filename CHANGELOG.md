@@ -1,6 +1,25 @@
 # CHANGELOG
 
-## [2026-05-29] Issue #2 — 加密货币模拟交易规则修复
+## 2026-05-29 — feat: 新增加密货币专属分析师 Agent (#3)
+
+### 新增
+- `tradingagents/agents/analysts/crypto_analyst.py` — 加密货币专属分析师，直接调用 BinanceProvider 获取 OHLCV 及资金费率，不依赖 LangChain 工具
+
+### 修改
+- `tradingagents/agents/utils/agent_states.py` — AgentState 新增 `crypto_report` 字段
+- `tradingagents/graph/analyst_execution.py` — ANALYST_NODE_SPECS 新增 `"crypto"` 条目
+- `tradingagents/graph/conditional_logic.py` — ConditionalLogic 新增 `should_continue_crypto` 方法
+- `tradingagents/graph/setup.py` — setup_graph 新增 `"crypto"` 分析师分支
+- `tradingagents/graph/trading_graph.py` — _create_tool_nodes 新增 `"crypto"` 空占位 ToolNode，进度映射新增 `"Crypto Analyst"`
+
+### 回滚命令
+```bash
+git revert HEAD
+```
+
+---
+
+## 2026-05-29 — feat/crypto-data-source (#1)
 
 ### 变更内容
 - `app/routers/paper.py`: 
