@@ -160,3 +160,32 @@ def fetch_cn_sentiment_bundle(ticker: str) -> tuple[str, str, str]:
     hot_block = fetch_hot_rank(ticker)
     comment_block = fetch_stock_comment(ticker)
     return news_block, hot_block, comment_block
+
+
+def get_cn_social_sentiment(stock_code: str) -> dict:
+    """汇总雪球+股吧情绪数据，返回结构化字典。
+
+    Parameters
+    ----------
+    stock_code : str
+        股票代码，支持格式：'000001'、'000001.SZ'、'SZ000001'
+
+    Returns
+    -------
+    dict
+        {
+            "stock_code": str,
+            "xueqiu": {雪球情绪数据},
+            "eastmoney": {东方财富股吧情绪数据},
+        }
+
+    Notes
+    -----
+    任一数据源失败时均优雅降级，不抛异常。
+    """
+    from .providers.china.xueqiu import XueqiuSentiment
+    from .providers.china.eastmoney import EastMoneySentiment
+
+    xq = XueqiuSentiment().get_sentiment(stock_code)
+    em = EastMoneySentiment().get_sentiment(stock_code)
+    return {"stock_code": stock_code, "xueqiu": xq, "eastmoney": em}

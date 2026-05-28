@@ -2,6 +2,14 @@
 
 本文档记录了TradingAgents-CN项目的所有重要更改。
 
+## 2026-05-29 — feat/cn-social-sentiment
+
+- 新增 `tradingagents/dataflows/providers/china/xueqiu.py`：雪球情绪数据（看多/看空比例），通过 AKShare `stock_hot_tweet_xq`/`stock_hot_follow_xq`/`stock_comment_em` 实现
+- 新增 `tradingagents/dataflows/providers/china/eastmoney.py`：东方财富股吧情绪数据，基于千股千评综合得分、市场参与意愿及新闻标题关键词分类
+- `cn_sentiment.py` 新增 `get_cn_social_sentiment()` 聚合函数，汇总雪球+股吧两路情绪数据
+- 新增测试脚本 `scripts/test/test_cn_social.py`
+- 回滚命令：`git revert HEAD`
+
 ## [v1.0.1] - 2026-04-14 - 配置体验与数据同步稳定性增强
 
 ### 🎉 重点更新
