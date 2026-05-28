@@ -41,17 +41,27 @@ logger = logging.getLogger("webapi")
 INITIAL_CASH_BY_MARKET = {
     "CNY": 1_000_000.0,   # A股：100万人民币
     "HKD": 1_000_000.0,   # 港股：100万港币
-    "USD": 100_000.0      # 美股：10万美元
+    "USD": 100_000.0,     # 美股：10万美元
+    "USDT": 100_000.0     # 加密货币：10万USDT
 }
+
+# 加密货币代码关键字（用于自动识别市场）
+CRYPTO_KEYWORDS = ["USDT", "BTC", "ETH", "SOL", "BNB"]
 
 
 class PlaceOrderRequest(BaseModel):
-    code: str = Field(..., description="股票代码（支持A股/港股/美股）")
+    code: str = Field(..., description="股票代码（支持A股/港股/美股/加密货币）")
     side: Literal["buy", "sell"]
-    quantity: int = Field(..., gt=0)
-    market: Optional[str] = Field(None, description="市场类型 (CN/HK/US)，不传则自动识别")
+    quantity: float = Field(..., gt=0)  # 支持小数仓位（如 0.001 BTC）
+    market: Optional[str] = Field(None, description="市场类型 (CN/HK/US/CRYPTO)，不传则自动识别")
     # 可选：关联的分析ID，便于从分析页面一键下单后追踪
     analysis_id: Optional[str] = None
+
+
+def _is_crypto_code(code: str) -> bool:
+    """判断代码是否为加密货币（包含 USDT/BTC/ETH/SOL/BNB 等关键字）"""
+    code_upper = code.strip().upper()
+    return any(kw in code_upper for kw in CRYPTO_KEYWORDS)
 
 
 def _detect_market_and_code(code: str) -> Tuple[str, str]:
@@ -63,8 +73,13 @@ def _detect_market_and_code(code: str) -> Tuple[str, str]:
             - CN: A股（6位数字）
             - HK: 港股（4-5位数字或带.HK后缀）
             - US: 美股（字母代码）
+            - CRYPTO: 加密货币（含 USDT/BTC/ETH/SOL/BNB 关键字）
     """
     code = code.strip().upper()
+
+    # 加密货币：含加密关键字（优先于美股纯字母规则）
+    if _is_crypto_code(code):
+        return ('CRYPTO', code)
 
     # 港股：带 .HK 后缀
     if code.endswith('.HK'):
@@ -98,13 +113,15 @@ async def _get_or_create_account(user_id: str) -> Dict[str, Any]:
             "cash": {
                 "CNY": INITIAL_CASH_BY_MARKET["CNY"],
                 "HKD": INITIAL_CASH_BY_MARKET["HKD"],
-                "USD": INITIAL_CASH_BY_MARKET["USD"]
+                "USD": INITIAL_CASH_BY_MARKET["USD"],
+                "USDT": INITIAL_CASH_BY_MARKET["USDT"]
             },
             # 多货币已实现盈亏
             "realized_pnl": {
                 "CNY": 0.0,
                 "HKD": 0.0,
-                "USD": 0.0
+                "USD": 0.0,
+                "USDT": 0.0
             },
             # 账户设置
             "settings": {
@@ -181,7 +198,7 @@ def _calculate_commission(market: str, side: str, amount: float, rules: Dict[str
     return round(commission, 2)
 
 
-async def _get_available_quantity(user_id: str, code: str, market: str) -> int:
+async def _get_available_quantity(user_id: str, code: str, market: str) -> float:
     """获取可用数量（考虑T+1限制）"""
     db = get_mongo_db()
     pos = await db["paper_positions"].find_one({"user_id": user_id, "code": code})
@@ -190,6 +207,10 @@ async def _get_available_quantity(user_id: str, code: str, market: str) -> int:
         return 0
 
     total_qty = pos.get("quantity", 0)
+
+    # 加密货币：24/7 交易，无 T+1 限制，全部可用
+    if market == "CRYPTO":
+        return total_qty
 
     # A股T+1：今天买入的不能卖出
     if market == "CN":
@@ -261,6 +282,21 @@ async def _get_last_price(code: str, market: str) -> Optional[float]:
         logger.error(f"❌ 无法从数据库获取A股价格: {code}")
         return None
 
+    # 加密货币：实时调用 Binance REST API
+    elif market == 'CRYPTO':
+        try:
+            import asyncio
+            from tradingagents.dataflows.providers.crypto.binance import BinanceProvider
+            provider = BinanceProvider()
+            loop = asyncio.get_event_loop()
+            price = await loop.run_in_executor(None, provider.get_price, code)
+            if price and price > 0:
+                logger.debug(f"✅ 从 Binance 获取加密价格: {code} = {price}")
+                return float(price)
+        except Exception as e:
+            logger.error(f"❌ 获取加密货币价格失败 {code}: {e}")
+            return None
+
     # 港股/美股：使用 ForeignStockService
     elif market in ['HK', 'US']:
         try:
@@ -303,7 +339,8 @@ async def get_account(current_user: dict = Depends(get_current_user)):
     positions_value_by_currency = {
         "CNY": 0.0,
         "HKD": 0.0,
-        "USD": 0.0
+        "USD": 0.0,
+        "USDT": 0.0
     }
 
     detailed_positions: List[Dict[str, Any]] = []
@@ -311,13 +348,15 @@ async def get_account(current_user: dict = Depends(get_current_user)):
         code = p.get("code")
         market = p.get("market", "CN")
         currency = p.get("currency", "CNY")
-        qty = int(p.get("quantity", 0))
+        qty = p.get("quantity", 0)
         avg_cost = float(p.get("avg_cost", 0.0))
         available_qty = p.get("available_qty", qty)
 
         # 获取最新价
         last = await _get_last_price(code, market)
         mkt_value = round((last or 0.0) * qty, 2)
+        if currency not in positions_value_by_currency:
+            positions_value_by_currency[currency] = 0.0
         positions_value_by_currency[currency] += mkt_value
 
         detailed_positions.append({
@@ -346,18 +385,21 @@ async def get_account(current_user: dict = Depends(get_current_user)):
         "cash": {
             "CNY": round(float(cash.get("CNY", 0.0)), 2),
             "HKD": round(float(cash.get("HKD", 0.0)), 2),
-            "USD": round(float(cash.get("USD", 0.0)), 2)
+            "USD": round(float(cash.get("USD", 0.0)), 2),
+            "USDT": round(float(cash.get("USDT", 0.0)), 2)
         },
         "realized_pnl": {
             "CNY": round(float(realized_pnl.get("CNY", 0.0)), 2),
             "HKD": round(float(realized_pnl.get("HKD", 0.0)), 2),
-            "USD": round(float(realized_pnl.get("USD", 0.0)), 2)
+            "USD": round(float(realized_pnl.get("USD", 0.0)), 2),
+            "USDT": round(float(realized_pnl.get("USDT", 0.0)), 2)
         },
         "positions_value": positions_value_by_currency,
         "equity": {
             "CNY": round(float(cash.get("CNY", 0.0)) + positions_value_by_currency["CNY"], 2),
             "HKD": round(float(cash.get("HKD", 0.0)) + positions_value_by_currency["HKD"], 2),
-            "USD": round(float(cash.get("USD", 0.0)) + positions_value_by_currency["USD"], 2)
+            "USD": round(float(cash.get("USD", 0.0)) + positions_value_by_currency["USD"], 2),
+            "USDT": round(float(cash.get("USDT", 0.0)) + positions_value_by_currency["USDT"], 2)
         },
         "updated_at": acc.get("updated_at"),
     }
@@ -378,14 +420,15 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
         market, normalized_code = _detect_market_and_code(payload.code)
 
     side = payload.side
-    qty = int(payload.quantity)
+    qty = payload.quantity  # float: 支持小数仓位（如 0.001 BTC）
     analysis_id = getattr(payload, "analysis_id", None)
 
     # 2. 确定货币
     currency_map = {
         "CN": "CNY",
         "HK": "HKD",
-        "US": "USD"
+        "US": "USD",
+        "CRYPTO": "USDT"
     }
     currency = currency_map.get(market, "CNY")
 
@@ -439,29 +482,31 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
 
         # 更新/创建持仓：加权平均成本
         if not pos:
+            # 加密货币和港股/美股 T+0，全部可用；A股 T+1，今天买入不可用
+            initial_available = 0 if market == "CN" else qty
             new_pos = {
                 "user_id": current_user["id"],
                 "code": normalized_code,
                 "market": market,
                 "currency": currency,
                 "quantity": qty,
-                "available_qty": qty if market != "CN" else 0,  # A股T+1，今天买入不可用
+                "available_qty": initial_available,
                 "frozen_qty": 0,
                 "avg_cost": price,
                 "updated_at": now_iso
             }
             await db["paper_positions"].insert_one(new_pos)
         else:
-            old_qty = int(pos.get("quantity", 0))
+            old_qty = pos.get("quantity", 0)
             old_cost = float(pos.get("avg_cost", 0.0))
             new_qty = old_qty + qty
             new_avg = round((old_cost * old_qty + price * qty) / new_qty, 4) if new_qty > 0 else price
 
-            # A股T+1：新买入的不可用
+            # A股T+1：新买入的不可用；加密货币/港股/美股 T+0，全部可用
             if market == "CN":
                 new_available = pos.get("available_qty", old_qty)  # 保持原有可用数量
             else:
-                new_available = new_qty  # 港股/美股T+0，全部可用
+                new_available = new_qty  # CRYPTO/HK/US T+0，全部可用
 
             await db["paper_positions"].update_one(
                 {"_id": pos["_id"]},
@@ -482,7 +527,7 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
                 detail=f"可用持仓不足：需要 {qty}，可用 {available_qty}"
             )
 
-        old_qty = int(pos.get("quantity", 0))
+        old_qty = pos.get("quantity", 0)
         avg_cost = float(pos.get("avg_cost", 0.0))
         new_qty = old_qty - qty
         pnl = round((price - avg_cost) * qty, 2)
@@ -502,7 +547,7 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
         )
 
         # 更新持仓
-        if new_qty == 0:
+        if new_qty <= 0:
             await db["paper_positions"].delete_one({"_id": pos["_id"]})
         else:
             new_available = max(0, pos.get("available_qty", old_qty) - qty)
@@ -568,7 +613,7 @@ async def list_positions(current_user: dict = Depends(get_current_user)):
         code = p.get("code")
         market = p.get("market", "CN")
         currency = p.get("currency", "CNY")
-        qty = int(p.get("quantity", 0))
+        qty = p.get("quantity", 0)
         available_qty = p.get("available_qty", qty)
         avg_cost = float(p.get("avg_cost", 0.0))
 
