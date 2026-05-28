@@ -1,36 +1,37 @@
 # CHANGELOG
 
-## [2026-05-29] Issue #10 — A股社交情绪分析师 Agent
+## [2026-05-29] Issue #13 — Telegram Bot AI信号推送
 
 ### 变更内容
-- `tradingagents/agents/analysts/cn_social_analyst.py` (新建):
-  - `create_cn_social_analyst(llm, toolkit)` 返回节点函数
-  - 仅对6位纯数字A股代码激活，非A股直接返回空报告
-  - 预取雪球+股吧数据，构建结构化 prompt，直接调用 LLM
-  - 写入 `cn_social_report` 和 `cn_social_tool_call_count`
-- `tradingagents/agents/utils/agent_states.py`:
-  - 新增 `cn_social_report: Annotated[str, ...]`
-  - 新增 `cn_social_tool_call_count: Annotated[int, ...]`
-- `tradingagents/graph/analyst_execution.py`:
-  - `ANALYST_NODE_SPECS` 注册 `"cn_social"` 条目
-- `tradingagents/graph/setup.py`:
-  - 新增 `if "cn_social" in selected_analysts:` 导入分析师
-- `tradingagents/graph/trading_graph.py`:
-  - `_create_tool_nodes()` 新增 `"cn_social": ToolNode([])`
-  - `_log_state()` 新增 `cn_social_report` 字段
-- `tradingagents/graph/conditional_logic.py`:
-  - 新增 `should_continue_cn_social()` 路由函数
-- `tradingagents/graph/propagation.py`:
-  - `create_initial_state()` 新增 `cn_social_report: ""`
+- `tradingagents/notification/__init__.py` (新建): 导出 TelegramNotifier
+- `tradingagents/notification/telegram.py` (新建):
+  - `TelegramNotifier` 类封装 Telegram Bot API
+  - `send_signal()` 推送含方向/置信度/理由的交易信号
+  - `start_reply_listener()` 后台轮询监听「确认」/「忽略」回复
+  - `test_connection()` 验证 Bot Token 连通性
+- `app/routers/telegram.py` (新建):
+  - `GET /api/telegram/config` 读取配置（脱敏 token）
+  - `POST /api/telegram/config` 保存配置
+  - `POST /api/telegram/test` 发送测试消息
+  - `POST /api/telegram/send_signal` 手动推送（调试用）
+  - `notify_analysis_result()` 供分析服务调用
+- `app/main.py`: 注册 telegram_router
+- `app/services/simple_analysis_service.py`:
+  - 新增 `_fire_telegram_notification()` 后台线程推送
+  - 分析完成后自动触发 Telegram 通知
+- `frontend/src/views/Settings/TelegramConfig.vue` (新建): 配置 UI
+- `frontend/src/router/index.ts`: 新增 `/settings/telegram` 路由
+- `frontend/src/components/Layout/SidebarMenu.vue`: 新增菜单项
 
 ### 涉及文件
-- `tradingagents/agents/analysts/cn_social_analyst.py` (新建)
-- `tradingagents/agents/utils/agent_states.py`
-- `tradingagents/graph/analyst_execution.py`
-- `tradingagents/graph/setup.py`
-- `tradingagents/graph/trading_graph.py`
-- `tradingagents/graph/conditional_logic.py`
-- `tradingagents/graph/propagation.py`
+- `tradingagents/notification/__init__.py` (新建)
+- `tradingagents/notification/telegram.py` (新建)
+- `app/routers/telegram.py` (新建)
+- `app/main.py`
+- `app/services/simple_analysis_service.py`
+- `frontend/src/views/Settings/TelegramConfig.vue` (新建)
+- `frontend/src/router/index.ts`
+- `frontend/src/components/Layout/SidebarMenu.vue`
 
 ### 回滚方法
 ```bash
