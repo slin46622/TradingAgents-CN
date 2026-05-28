@@ -31,7 +31,8 @@ def create_portfolio_manager(llm, layered_memory=None):
         research_plan = state["investment_plan"]
         trader_plan = state["trader_investment_plan"]
 
-        # LayeredMemory: inject historical decision context
+        # LayeredMemory: inject historical decision context + analyst accuracy weights
+        weights_line = ""
         if layered_memory is not None:
             try:
                 layered_ctx = layered_memory.get_context(ticker, n_short=5, n_medium=3, n_long=5)
@@ -42,6 +43,13 @@ def create_portfolio_manager(llm, layered_memory=None):
                     past_context = state.get("past_context", "")
             except Exception:
                 past_context = state.get("past_context", "")
+
+            try:
+                weights_ctx = layered_memory.get_analyst_weights_context(window=20)
+                if weights_ctx:
+                    weights_line = f"{weights_ctx}\n"
+            except Exception:
+                pass
         else:
             past_context = state.get("past_context", "")
 
@@ -67,7 +75,7 @@ def create_portfolio_manager(llm, layered_memory=None):
 **Context:**
 - Research Manager's investment plan: **{research_plan}**
 - Trader's transaction proposal: **{trader_plan}**
-{lessons_line}
+{weights_line}{lessons_line}
 **Risk Analysts Debate History:**
 {history}
 

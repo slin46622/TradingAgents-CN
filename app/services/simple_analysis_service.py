@@ -1559,6 +1559,30 @@ class SimpleAnalysisService:
 
             logger.info(f"✅ trading_graph.propagate 执行完成")
 
+            # 记录各分析师方向信号，用于后续准确率统计
+            try:
+                from tradingagents.agents.utils.layered_memory import LayeredMemory, extract_direction
+                _mem2 = LayeredMemory(trading_graph.config)
+                _report_keys = {
+                    "market": "market_report",
+                    "fundamentals": "fundamentals_report",
+                    "news": "news_report",
+                    "sentiment": "sentiment_report",
+                    "macro": "macro_event_report",
+                    "crypto": "crypto_report",
+                    "cn_social": "cn_social_report",
+                }
+                _signals = {}
+                for analyst_name, key in _report_keys.items():
+                    report_text = (state.get(key, "") or "") if isinstance(state, dict) else (getattr(state, key, "") or "")
+                    if report_text and len(report_text) > 20:
+                        _signals[analyst_name] = extract_direction(report_text)
+                if _signals:
+                    _mem2.record_analyst_signals(request.stock_code, analysis_date, _signals)
+                    logger.info(f"📊 [准确率] 已记录 {request.stock_code} 分析师信号: {_signals}")
+            except Exception as _se:
+                logger.debug(f"[准确率] 记录分析师信号失败（不影响分析）: {_se}")
+
             # 🔍 调试：检查decision的结构
             logger.info(f"🔍 [DEBUG] Decision类型: {type(decision)}")
             logger.info(f"🔍 [DEBUG] Decision内容: {decision}")
