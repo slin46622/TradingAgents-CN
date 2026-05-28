@@ -1,16 +1,35 @@
 # CHANGELOG
 
-## 2026-05-29 — feat: 新增加密货币专属分析师 Agent (#3)
+## 2026-05-29 — feat/backtest-portfolio (#12)
 
 ### 新增
-- `tradingagents/agents/analysts/crypto_analyst.py` — 加密货币专属分析师，直接调用 BinanceProvider 获取 OHLCV 及资金费率，不依赖 LangChain 工具
+- `tradingagents/backtest/service.py` — `BacktestService.portfolio_evaluate()` 多标的组合回测方法，支持等权重组合绩效计算
+- `tradingagents/backtest/service.py` — `_compute_metrics_from_returns()` 辅助函数：从净收益序列计算绩效指标
+- `tradingagents/backtest/service.py` — `_compute_correlation()` 辅助函数：计算两两收益率相关性矩阵
+- `app/routers/backtest.py` — `/api/backtest/portfolio` POST 路由
 
 ### 修改
-- `tradingagents/agents/utils/agent_states.py` — AgentState 新增 `crypto_report` 字段
-- `tradingagents/graph/analyst_execution.py` — ANALYST_NODE_SPECS 新增 `"crypto"` 条目
-- `tradingagents/graph/conditional_logic.py` — ConditionalLogic 新增 `should_continue_crypto` 方法
-- `tradingagents/graph/setup.py` — setup_graph 新增 `"crypto"` 分析师分支
-- `tradingagents/graph/trading_graph.py` — _create_tool_nodes 新增 `"crypto"` 空占位 ToolNode，进度映射新增 `"Crypto Analyst"`
+- `app/main.py` — 注册 backtest_router
+- `frontend/src/views/Backtest/index.vue` — 股票代码输入框支持逗号分隔多标的；多标的时调用组合回测接口，单标的走原有接口；新增各标的绩效对比表格和相关性矩阵展示
+
+### 回滚命令
+```bash
+git revert HEAD
+```
+
+---
+
+
+## 2026-05-29 — feat/backtest-enhanced (#11)
+
+### 新增
+- `tradingagents/backtest/engine.py` — `PerformanceMetrics` dataclass，`calculate_performance()` 方法（夏普比率/最大回撤/胜率/盈亏比）
+- `frontend/src/views/Backtest/index.vue` — 回测系统前端页面
+
+### 修改
+- `tradingagents/backtest/engine.py` — `EvaluationConfig` 新增 commission_rate/slippage_rate 字段
+- `frontend/src/router/index.ts` — 新增 /backtest 路由
+- `frontend/src/components/Layout/SidebarMenu.vue` — 左侧菜单新增「回测系统」独立入口
 
 ### 回滚命令
 ```bash

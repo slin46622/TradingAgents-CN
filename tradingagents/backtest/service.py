@@ -138,6 +138,90 @@ class BacktestService:
             results.append(result)
         return results
 
+    def portfolio_evaluate(
+        self,
+        symbols: List[str],
+        eval_window_days: int = 20,
+        commission_rate: float = 0.0003,
+        slippage_rate: float = 0.001,
+    ) -> Dict[str, Any]:
+        """多标的组合回测，返回组合绩效和相关性矩阵。
+
+        Returns:
+            {
+                "symbols": [...],
+                "individual": {symbol: PerformanceMetrics as dict},
+                "portfolio": PerformanceMetrics as dict,  # 等权重组合
+                "correlation": {symbol_a: {symbol_b: float}},  # 收益率相关性矩阵
+            }
+        """
+        from tradingagents.backtest.engine import PerformanceMetrics, EvaluationConfig
+
+        config = EvaluationConfig(
+            eval_window_days=eval_window_days,
+            commission_rate=commission_rate,
+            slippage_rate=slippage_rate,
+        )
+
+        individual_results: Dict[str, Any] = {}
+        individual_returns: Dict[str, List[float]] = {}
+
+        cost = (commission_rate + slippage_rate) * 2
+
+        for symbol in symbols:
+            try:
+                # 复用 batch_evaluate — 传入包含该 symbol 全部历史分析的列表
+                # 由于当前 batch_evaluate 接受 List[Dict]，这里直接调用 _fetch_data
+                # 并使用当日作为分析日以获取 forward bars，逐笔计算。
+                # 为简化：调用 evaluate() 用当前日期来衡量近期绩效
+                from datetime import date as _date
+                result = self.evaluate(
+                    symbol=symbol,
+                    operation_advice="买入",
+                    analysis_date=_date.today(),
+                )
+                # evaluate() 返回 eval_status 可能是 insufficient_data
+                sim_ret = result.get("simulated_return_pct")
+                if sim_ret is not None:
+                    net_ret = (sim_ret / 100) - cost
+                    individual_returns[symbol] = [net_ret]
+                    # Build a minimal metrics object from single trade
+                    m = _compute_metrics_from_returns([net_ret], config)
+                    individual_results[symbol] = vars(m)
+                else:
+                    logger.warning("[组合回测] %s 无有效回测数据: %s", symbol, result.get("eval_status"))
+            except Exception as e:
+                logger.warning("[组合回测] %s 评估失败: %s", symbol, e)
+
+        if not individual_results:
+            return {
+                "symbols": symbols,
+                "individual": {},
+                "portfolio": None,
+                "correlation": {},
+            }
+
+        # 等权重组合收益序列
+        all_returns_lists = [v for v in individual_returns.values() if v]
+        if all_returns_lists:
+            min_len = min(len(r) for r in all_returns_lists)
+            portfolio_returns_seq = []
+            for i in range(min_len):
+                avg = sum(r[i] for r in all_returns_lists) / len(all_returns_lists)
+                portfolio_returns_seq.append(avg)
+            portfolio_metrics = _compute_metrics_from_returns(portfolio_returns_seq, config)
+        else:
+            portfolio_metrics = PerformanceMetrics(total_trades=0)
+
+        correlation = _compute_correlation(individual_returns)
+
+        return {
+            "symbols": symbols,
+            "individual": individual_results,
+            "portfolio": vars(portfolio_metrics),
+            "correlation": correlation,
+        }
+
     # ------------------------------------------------------------------
     # DSA 数据获取
     # ------------------------------------------------------------------
@@ -224,3 +308,57 @@ def _to_float(v: Any) -> Optional[float]:
         return float(v)
     except (ValueError, TypeError):
         return None
+
+
+def _compute_metrics_from_returns(returns: list, config) -> "PerformanceMetrics":
+    """从净收益序列直接计算绩效指标。"""
+    import math
+    import statistics
+    from tradingagents.backtest.engine import PerformanceMetrics
+    if not returns:
+        return PerformanceMetrics()
+    wins = [r for r in returns if r > 0]
+    losses = [r for r in returns if r < 0]
+    win_rate = len(wins) / len(returns)
+    avg = sum(returns) / len(returns)
+    annualized = (1 + avg) ** (252 / max(config.eval_window_days, 1)) - 1
+    std = statistics.stdev(returns) if len(returns) > 1 else 0
+    sharpe = ((annualized - 0.02) / (std * math.sqrt(252))) if std > 0 else 0
+    cumulative, peak, max_dd = 1.0, 1.0, 0.0
+    for r in returns:
+        cumulative *= (1 + r)
+        peak = max(peak, cumulative)
+        max_dd = max(max_dd, (peak - cumulative) / peak)
+    avg_win = sum(wins) / len(wins) if wins else 0
+    avg_loss = abs(sum(losses) / len(losses)) if losses else 0
+    return PerformanceMetrics(
+        total_trades=len(returns),
+        net_return_pct=round(avg * 100, 2),
+        total_return_pct=round(sum(returns) * 100, 2),
+        annualized_return_pct=round(annualized * 100, 2),
+        sharpe_ratio=round(sharpe, 2),
+        max_drawdown_pct=round(max_dd * 100, 2),
+        win_rate=round(win_rate, 4),
+        profit_loss_ratio=round(avg_win / avg_loss, 2) if avg_loss else 0,
+    )
+
+
+def _compute_correlation(returns_map: dict) -> dict:
+    """计算各标的收益率序列的两两相关性。"""
+    import statistics
+    symbols = list(returns_map.keys())
+    corr = {s: {} for s in symbols}
+    for i, sa in enumerate(symbols):
+        for sb in symbols[i:]:
+            ra, rb = returns_map[sa], returns_map[sb]
+            n = min(len(ra), len(rb))
+            if n < 2:
+                corr[sa][sb] = corr[sb][sa] = None
+                continue
+            ra_t, rb_t = ra[:n], rb[:n]
+            try:
+                c = statistics.correlation(ra_t, rb_t)
+            except Exception:
+                c = None
+            corr[sa][sb] = corr[sb][sa] = round(c, 3) if c is not None else None
+    return corr

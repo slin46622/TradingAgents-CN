@@ -16,7 +16,7 @@
             <el-form-item label="股票代码">
               <el-input
                 v-model="form.symbol"
-                placeholder="如 000001 / BTC"
+                placeholder="如 000001,600519,BTC（逗号分隔）"
                 clearable
               />
             </el-form-item>
@@ -70,7 +70,7 @@
       </el-form>
     </el-card>
 
-    <!-- 绩效指标卡片 -->
+    <!-- 绩效指标卡片（单标的 或 组合整体） -->
     <el-row :gutter="16" v-if="metrics" class="metrics-row">
       <el-col :xs="12" :sm="6">
         <el-card shadow="never" class="metric-card">
@@ -132,6 +132,66 @@
       </el-descriptions>
     </el-card>
 
+    <!-- 组合回测：各标的绩效对比 -->
+    <el-card v-if="portfolioResult" class="portfolio-card" shadow="never">
+      <template #header>
+        <span>各标的绩效</span>
+      </template>
+      <el-table :data="individualRows" size="small" border>
+        <el-table-column prop="symbol" label="标的" width="100" />
+        <el-table-column prop="net_return_pct" label="净收益率(%)" width="120">
+          <template #default="{ row }">
+            <span :class="row.net_return_pct >= 0 ? 'positive' : 'negative'">
+              {{ row.net_return_pct >= 0 ? '+' : '' }}{{ row.net_return_pct.toFixed(2) }}%
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="annualized_return_pct" label="年化收益率(%)" width="130">
+          <template #default="{ row }">
+            <span :class="row.annualized_return_pct >= 0 ? 'positive' : 'negative'">
+              {{ row.annualized_return_pct.toFixed(2) }}%
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="sharpe_ratio" label="夏普比率" width="100" />
+        <el-table-column prop="max_drawdown_pct" label="最大回撤(%)" width="120">
+          <template #default="{ row }">
+            <span class="negative">-{{ row.max_drawdown_pct.toFixed(2) }}%</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="win_rate" label="胜率" width="80">
+          <template #default="{ row }">
+            {{ (row.win_rate * 100).toFixed(1) }}%
+          </template>
+        </el-table-column>
+        <el-table-column prop="total_trades" label="交易次数" width="90" />
+      </el-table>
+    </el-card>
+
+    <!-- 组合回测：相关性矩阵 -->
+    <el-card v-if="portfolioResult && correlationRows.length" class="correlation-card" shadow="never">
+      <template #header>
+        <span>收益率相关性矩阵</span>
+      </template>
+      <el-table :data="correlationRows" size="small" border>
+        <el-table-column prop="symbol" label="标的" width="100" />
+        <el-table-column
+          v-for="s in portfolioResult.symbols"
+          :key="s"
+          :prop="s"
+          :label="s"
+          width="90"
+        >
+          <template #default="{ row }">
+            <span v-if="row[s] !== null && row[s] !== undefined" :class="correlationClass(row[s])">
+              {{ row[s] }}
+            </span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <!-- 空状态 -->
     <el-empty
       v-if="!metrics && !loading"
@@ -142,7 +202,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
@@ -157,8 +217,16 @@ interface BacktestMetrics {
   net_return_pct: number
 }
 
+interface PortfolioResult {
+  symbols: string[]
+  individual: Record<string, BacktestMetrics>
+  portfolio: BacktestMetrics | null
+  correlation: Record<string, Record<string, number | null>>
+}
+
 const loading = ref(false)
 const metrics = ref<BacktestMetrics | null>(null)
+const portfolioResult = ref<PortfolioResult | null>(null)
 
 const form = reactive({
   symbol: '',
@@ -167,24 +235,73 @@ const form = reactive({
   slippageRate: 0.001,
 })
 
+// 各标的绩效行（组合回测用）
+const individualRows = computed(() => {
+  if (!portfolioResult.value) return []
+  return Object.entries(portfolioResult.value.individual).map(([symbol, m]) => ({
+    symbol,
+    ...m,
+  }))
+})
+
+// 相关性矩阵行
+const correlationRows = computed(() => {
+  if (!portfolioResult.value) return []
+  const corr = portfolioResult.value.correlation
+  return Object.entries(corr).map(([symbol, row]) => ({
+    symbol,
+    ...row,
+  }))
+})
+
+function correlationClass(val: number) {
+  if (val >= 0.7) return 'corr-high'
+  if (val <= -0.3) return 'corr-low'
+  return ''
+}
+
 async function runBacktest() {
   if (!form.symbol.trim()) {
     ElMessage.warning('请输入股票代码')
     return
   }
+
+  const symbols = form.symbol.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
   loading.value = true
   metrics.value = null
+  portfolioResult.value = null
+
   try {
-    const res = await axios.post('/api/backtest/run', {
-      symbol: form.symbol.trim().toUpperCase(),
-      eval_window_days: form.evalWindowDays,
-      commission_rate: form.commissionRate,
-      slippage_rate: form.slippageRate,
-    })
-    if (res.data?.data) {
-      metrics.value = res.data.data
+    if (symbols.length > 1) {
+      // 多标的：调用组合回测接口
+      const res = await axios.post('/api/backtest/portfolio', {
+        symbols,
+        eval_window_days: form.evalWindowDays,
+        commission_rate: form.commissionRate,
+        slippage_rate: form.slippageRate,
+      })
+      if (res.data?.data) {
+        portfolioResult.value = res.data.data
+        // 用等权重组合绩效填充顶部指标卡片
+        if (res.data.data.portfolio) {
+          metrics.value = res.data.data.portfolio
+        }
+      } else {
+        ElMessage.info('暂无组合回测数据，请先进行 AI 分析')
+      }
     } else {
-      ElMessage.info('暂无该标的的历史回测数据，请先进行 AI 分析')
+      // 单标的：走原来的接口
+      const res = await axios.post('/api/backtest/run', {
+        symbol: symbols[0],
+        eval_window_days: form.evalWindowDays,
+        commission_rate: form.commissionRate,
+        slippage_rate: form.slippageRate,
+      })
+      if (res.data?.data) {
+        metrics.value = res.data.data
+      } else {
+        ElMessage.info('暂无该标的的历史回测数据，请先进行 AI 分析')
+      }
     }
   } catch (err: any) {
     if (err?.response?.status === 404) {
@@ -203,6 +320,7 @@ function resetForm() {
   form.commissionRate = 0.0003
   form.slippageRate = 0.001
   metrics.value = null
+  portfolioResult.value = null
 }
 </script>
 
@@ -259,6 +377,17 @@ function resetForm() {
   margin-top: 4px;
 }
 
+.portfolio-card {
+  margin-top: 16px;
+}
+
+.correlation-card {
+  margin-top: 16px;
+}
+
 .positive { color: #f56c6c; }
 .negative { color: #67c23a; }
+.corr-high { color: #e6a23c; font-weight: 600; }
+.corr-low  { color: #409eff; font-weight: 600; }
+.muted     { color: #c0c4cc; }
 </style>
