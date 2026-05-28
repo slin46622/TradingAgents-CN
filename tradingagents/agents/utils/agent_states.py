@@ -65,6 +65,7 @@ class AgentState(MessagesState):
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
     macro_event_report: Annotated[str, "Report from the Macro Event Analyst"]
     crypto_report: Annotated[str, "Report from the Crypto Analyst"]
+    cn_social_report: Annotated[str, "Report from the A-share Social Sentiment Analyst (Xueqiu + Eastmoney)"]
 
     # LayeredMemory: past decisions context injected into Portfolio Manager
     past_context: Annotated[str, "Historical decision context from LayeredMemory"]
@@ -74,6 +75,7 @@ class AgentState(MessagesState):
     news_tool_call_count: Annotated[int, "News analyst tool call counter"]
     sentiment_tool_call_count: Annotated[int, "Social media analyst tool call counter"]
     fundamentals_tool_call_count: Annotated[int, "Fundamentals analyst tool call counter"]
+    cn_social_tool_call_count: Annotated[int, "CN social sentiment analyst tool call counter"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

@@ -213,6 +213,20 @@ class ConditionalLogic:
         logger.info("🔀 [条件判断] ✅ 无工具调用，返回: Msg Clear Crypto")
         return "Msg Clear Crypto"
 
+    def should_continue_cn_social(self, state: AgentState):
+        """CN社交情绪分析师不使用工具，直接清除消息。"""
+        from tradingagents.utils.logging_init import get_logger
+        logger = get_logger("agents")
+
+        cn_social_report = state.get("cn_social_report", "")
+
+        if cn_social_report and len(cn_social_report) > 10:
+            logger.info("🔀 [条件判断] ✅ CN社交情绪报告已完成，返回: Msg Clear Cn_social")
+            return "Msg Clear Cn_social"
+
+        logger.info("🔀 [条件判断] ✅ CN社交情绪分析师无工具调用，返回: Msg Clear Cn_social")
+        return "Msg Clear Cn_social"
+
     def should_continue_macro(self, state: AgentState):
         """Macro event analyst never uses tools — always route to clear."""
         macro_report = state.get("macro_event_report", "")
