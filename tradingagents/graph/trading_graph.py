@@ -658,6 +658,8 @@ class TradingAgentsGraph:
             ),
             # 加密分析师直接调 REST，不依赖 LangChain 工具；占位 ToolNode 保持图结构一致
             "crypto": ToolNode([]),
+            # A股社交情绪分析师直接调用 AKShare，不需要 LangChain 工具节点
+            "cn_social": ToolNode([]),
         }
 
     def propagate(self, company_name, trade_date, progress_callback=None, task_id=None, resume_from=None):
@@ -919,18 +921,21 @@ class TradingAgentsGraph:
                 'News Analyst': "📰 新闻分析师",
                 'Social Analyst': "💬 社交媒体分析师",
                 'Crypto Analyst': "🪙 加密货币分析师",
+                'Cn_social Analyst': "📱 A股社交情绪分析师",
                 # 工具节点（不发送进度更新，避免重复）
                 'tools_market': None,
                 'tools_fundamentals': None,
                 'tools_news': None,
                 'tools_social': None,
                 'tools_crypto': None,
+                'tools_cn_social': None,
                 # 消息清理节点（不发送进度更新）
                 'Msg Clear Market': None,
                 'Msg Clear Fundamentals': None,
                 'Msg Clear News': None,
                 'Msg Clear Social': None,
                 'Msg Clear Crypto': None,
+                'Msg Clear Cn_social': None,
                 # 研究员节点
                 'Bull Researcher': "🐂 看涨研究员",
                 'Bear Researcher': "🐻 看跌研究员",
@@ -1164,6 +1169,7 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            "cn_social_report": final_state.get("cn_social_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"].get("bull_history", ""),
                 "bear_history": final_state["investment_debate_state"].get("bear_history", ""),

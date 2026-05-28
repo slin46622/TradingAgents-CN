@@ -57,6 +57,7 @@ class Propagator:
             "sentiment_report": "",
             "news_report": "",
             "macro_event_report": "",
+            "cn_social_report": "",
             "past_context": "",
         }
 

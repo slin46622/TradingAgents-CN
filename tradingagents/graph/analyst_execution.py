@@ -58,6 +58,13 @@ ANALYST_NODE_SPECS: Dict[str, AnalystNodeSpec] = {
         tool_node="tools_crypto",
         report_key="crypto_report",
     ),
+    "cn_social": AnalystNodeSpec(
+        key="cn_social",
+        agent_node="Cn_social Analyst",
+        clear_node="Msg Clear Cn_social",
+        tool_node="tools_cn_social",
+        report_key="cn_social_report",
+    ),
 }
 
 

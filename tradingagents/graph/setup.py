@@ -207,6 +207,14 @@ class GraphSetup:
             tool_nodes["macro"] = ToolNode([])
             logger.info("🌍 [图配置] 宏观事件分析师已加入图")
 
+        if "cn_social" in selected_analysts:
+            from tradingagents.agents.analysts.cn_social_analyst import create_cn_social_analyst
+            analyst_nodes["cn_social"] = create_cn_social_analyst(self.quick_thinking_llm, self.toolkit)
+            delete_nodes["cn_social"] = create_msg_delete()
+            # cn_social analyst calls AKShare directly — no LangChain tool node needed
+            tool_nodes["cn_social"] = self.tool_nodes.get("cn_social", ToolNode([]))
+            logger.info("📱 [图配置] A股社交情绪分析师已加入图")
+
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(
             self.quick_thinking_llm, self.bull_memory
