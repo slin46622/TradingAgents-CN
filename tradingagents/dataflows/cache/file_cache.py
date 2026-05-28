@@ -15,6 +15,7 @@ import hashlib
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger
+from tradingagents.utils.ticker_safety import safe_path_ticker
 logger = get_logger('agents')
 
 
@@ -175,14 +176,12 @@ class StockDataCache:
     
     def _generate_cache_key(self, data_type: str, symbol: str, **kwargs) -> str:
         """生成缓存键"""
-        # 创建一个包含所有参数的字符串
+        safe_sym = safe_path_ticker(symbol)
         params_str = f"{data_type}_{symbol}"
         for key, value in sorted(kwargs.items()):
             params_str += f"_{key}_{value}"
-        
-        # 使用MD5生成短的唯一标识
         cache_key = hashlib.md5(params_str.encode()).hexdigest()[:12]
-        return f"{symbol}_{data_type}_{cache_key}"
+        return f"{safe_sym}_{data_type}_{cache_key}"
     
     def _get_cache_path(self, data_type: str, cache_key: str, file_format: str = "json", symbol: str = None) -> Path:
         """获取缓存文件路径 - 支持市场分类"""

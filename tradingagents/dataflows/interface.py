@@ -2,6 +2,7 @@ from typing import Annotated, Dict
 import time
 import os
 from datetime import datetime
+from tradingagents.utils.ticker_safety import safe_path_ticker
 
 # 导入新闻模块（支持新旧路径）
 try:
@@ -747,7 +748,7 @@ def get_stock_stats_indicators_window(
         data = pd.read_csv(
             os.path.join(
                 DATA_DIR,
-                f"market_data/price_data/{symbol}-YFin-data-2015-01-01-2025-03-25.csv",
+                f"market_data/price_data/{safe_path_ticker(symbol)}-YFin-data-2015-01-01-2025-03-25.csv",
             )
         )
         data["Date"] = pd.to_datetime(data["Date"], utc=True)
@@ -829,7 +830,7 @@ def get_YFin_data_window(
     data = pd.read_csv(
         os.path.join(
             DATA_DIR,
-            f"market_data/price_data/{symbol}-YFin-data-2015-01-01-2025-03-25.csv",
+            f"market_data/price_data/{safe_path_ticker(symbol)}-YFin-data-2015-01-01-2025-03-25.csv",
         )
     )
 
@@ -910,7 +911,7 @@ def get_YFin_data(
     data = pd.read_csv(
         os.path.join(
             DATA_DIR,
-            f"market_data/price_data/{symbol}-YFin-data-2015-01-01-2025-03-25.csv",
+            f"market_data/price_data/{safe_path_ticker(symbol)}-YFin-data-2015-01-01-2025-03-25.csv",
         )
     )
 
@@ -1641,9 +1642,10 @@ def get_china_stock_info_unified(
         str: 股票基本信息
     """
     try:
-        from .data_source_manager import get_china_stock_info_unified
+        # ✅ v2: 统一桥接层（新 DSA fallback）
+        from .unified_data_source import get_china_stock_info_unified
 
-        logger.info(f"📊 [统一接口] 获取{ticker}基本信息...")
+        logger.info(f"📊 [统一接口] 获取{ticker}基本信息（桥接层）...")
 
         info = get_china_stock_info_unified(ticker)
 
