@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 2026-05-29 — feat/backtest-portfolio (#12)
+
+### 新增
+- `tradingagents/backtest/service.py` — `BacktestService.portfolio_evaluate()` 多标的组合回测方法，支持等权重组合绩效计算
+- `tradingagents/backtest/service.py` — `_compute_metrics_from_returns()` 辅助函数：从净收益序列计算绩效指标
+- `tradingagents/backtest/service.py` — `_compute_correlation()` 辅助函数：计算两两收益率相关性矩阵
+- `app/routers/backtest.py` — `/api/backtest/portfolio` POST 路由
+
+### 修改
+- `app/main.py` — 注册 backtest_router
+- `frontend/src/views/Backtest/index.vue` — 股票代码输入框支持逗号分隔多标的；多标的时调用组合回测接口，单标的走原有接口；新增各标的绩效对比表格和相关性矩阵展示
+
+### 回滚命令
+```bash
+git revert HEAD
+```
+
+---
+
+
 ## 2026-05-29 — feat/backtest-enhanced (#11)
 
 ### 新增
