@@ -9,6 +9,30 @@ from app.routers.auth_db import get_current_user
 from app.core.database import get_mongo_db
 from app.core.response import ok
 
+def _write_sell_to_layered_memory(stock_code: str, avg_cost: float, sell_price: float, hold_days: int = 0):
+    """平仓后将交易结果写入 Agent layered_memory，形成学习闭环。"""
+    try:
+        from tradingagents.agents.utils.layered_memory import LayeredMemory
+        from tradingagents.default_config import DEFAULT_CONFIG
+        import datetime as _dt
+        profit_pct = (sell_price - avg_cost) / avg_cost if avg_cost > 0 else 0.0
+        trade_date = _dt.date.today().strftime("%Y-%m-%d")
+        mem = LayeredMemory(DEFAULT_CONFIG)
+        mem.record_decision(
+            ticker=stock_code,
+            trade_date=trade_date,
+            action=f"模拟交易平仓：买入均价{avg_cost:.4f}→卖出{sell_price:.4f}，持仓{hold_days}天",
+            realized_return=round(profit_pct, 4),
+        )
+        mem.add_medium(
+            ticker=stock_code,
+            content=f"模拟交易结果：持仓{hold_days}天，盈亏{profit_pct*100:.1f}%（买入{avg_cost:.4f}→卖出{sell_price:.4f}）",
+            trade_date=trade_date,
+        )
+        logger.info(f"📝 [记忆闭环] {stock_code} 交易结果已写入 layered_memory，盈亏={profit_pct*100:.1f}%")
+    except Exception as e:
+        logger.warning(f"⚠️ [记忆闭环] 写入 layered_memory 失败（不影响交易）: {e}")
+
 router = APIRouter(prefix="/paper", tags=["paper"])
 logger = logging.getLogger("webapi")
 
@@ -490,6 +514,10 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
                     "updated_at": now_iso
                 }}
             )
+
+        # 平仓后写入 Agent 记忆（异步友好：不阻塞主流程）
+        if new_qty == 0:
+            _write_sell_to_layered_memory(normalized_code, avg_cost, price)
 
     # 9. 记录订单与成交（即成）
     order_doc = {
