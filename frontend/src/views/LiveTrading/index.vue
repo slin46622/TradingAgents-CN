@@ -171,7 +171,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
+import axios from '@/api/request'
 
 interface ConfigStatus {
   configured: boolean
