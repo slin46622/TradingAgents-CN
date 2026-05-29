@@ -271,13 +271,15 @@ class StockDataPreparer:
                 return self._prepare_hk_stock_data(stock_code, period_days, analysis_date)
             elif market_type == "美股":
                 return self._prepare_us_stock_data(stock_code, period_days, analysis_date)
+            elif market_type == "加密":
+                return self._prepare_crypto_stock_data(stock_code, period_days, analysis_date)
             else:
                 return StockDataPreparationResult(
                     is_valid=False,
                     stock_code=stock_code,
                     market_type=market_type,
                     error_message=f"不支持的市场类型: {market_type}",
-                    suggestion="请选择支持的市场类型：A股、港股、美股"
+                    suggestion="请选择支持的市场类型：A股、港股、美股、加密"
                 )
         except Exception as e:
             logger.error(f"❌ [数据准备] 数据准备异常: {e}")
@@ -301,13 +303,15 @@ class StockDataPreparer:
                 return self._prepare_hk_stock_data(stock_code, period_days, analysis_date)
             elif market_type == "美股":
                 return self._prepare_us_stock_data(stock_code, period_days, analysis_date)
+            elif market_type == "加密":
+                return self._prepare_crypto_stock_data(stock_code, period_days, analysis_date)
             else:
                 return StockDataPreparationResult(
                     is_valid=False,
                     stock_code=stock_code,
                     market_type=market_type,
                     error_message=f"不支持的市场类型: {market_type}",
-                    suggestion="请选择支持的市场类型：A股、港股、美股"
+                    suggestion="请选择支持的市场类型：A股、港股、美股、加密"
                 )
         except Exception as e:
             logger.error(f"❌ [数据准备-异步] 数据准备异常: {e}")
@@ -1217,7 +1221,61 @@ class StockDataPreparer:
                 suggestion="请检查网络连接或数据源配置"
             )
 
+    # Short crypto names → canonical CCXT-style symbol
+    _CRYPTO_SHORT_MAP = {
+        "BTC": "BTCUSDT", "ETH": "ETHUSDT", "BNB": "BNBUSDT", "SOL": "SOLUSDT",
+        "XRP": "XRPUSDT", "ADA": "ADAUSDT", "DOGE": "DOGEUSDT", "AVAX": "AVAXUSDT",
+        "DOT": "DOTUSDT", "MATIC": "MATICUSDT", "LINK": "LINKUSDT", "UNI": "UNIUSDT",
+        "ATOM": "ATOMUSDT", "LTC": "LTCUSDT", "ETC": "ETCUSDT", "NEAR": "NEARUSDT",
+        "APT": "APTUSDT", "ARB": "ARBUSDT", "OP": "OPUSDT", "SUI": "SUIUSDT",
+        "TRX": "TRXUSDT", "FIL": "FILUSDT", "INJ": "INJUSDT", "IMX": "IMXUSDT",
+        "PEPE": "PEPEUSDT", "WIF": "WIFUSDT", "BONK": "BONKUSDT",
+    }
 
+    def _prepare_crypto_stock_data(self, stock_code: str, period_days: int,
+                                   analysis_date: str) -> StockDataPreparationResult:
+        """预获取加密货币数据（Binance REST → CoinGecko 备用）"""
+        # 短名称扩展：ETH → ETHUSDT
+        symbol = self._CRYPTO_SHORT_MAP.get(stock_code.upper(), stock_code.upper())
+        logger.info(f"📊 [加密数据] 开始准备 {symbol} 数据 (时长: {period_days}天)")
+        try:
+            from tradingagents.dataflows.interface import get_crypto_stock_data_unified
+            end = datetime.strptime(analysis_date, '%Y-%m-%d')
+            start = end - timedelta(days=period_days)
+            data = get_crypto_stock_data_unified(
+                symbol,
+                start_date=start.strftime('%Y-%m-%d'),
+                end_date=end.strftime('%Y-%m-%d'),
+                limit=min(period_days, 60),
+            )
+            if data and "❌" not in data and len(data) > 50:
+                logger.info(f"✅ [加密数据] 数据获取成功: {symbol}")
+                return StockDataPreparationResult(
+                    is_valid=True,
+                    stock_code=symbol,
+                    market_type="加密",
+                    stock_name=symbol,
+                    has_historical_data=True,
+                    has_basic_info=True,
+                    data_period_days=period_days,
+                    cache_status=f"加密行情已获取({period_days}天)"
+                )
+            return StockDataPreparationResult(
+                is_valid=False,
+                stock_code=symbol,
+                market_type="加密",
+                error_message=f"无法获取 {symbol} 行情数据",
+                suggestion="请检查代码（如 BTCUSDT 或 BTC）和网络连接"
+            )
+        except Exception as e:
+            logger.error(f"❌ [加密数据] 数据准备失败: {e}")
+            return StockDataPreparationResult(
+                is_valid=False,
+                stock_code=symbol,
+                market_type="加密",
+                error_message=f"加密数据获取失败: {str(e)}",
+                suggestion="请检查网络连接或代理配置"
+            )
 
 
 # 全局数据准备器实例

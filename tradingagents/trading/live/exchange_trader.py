@@ -101,6 +101,8 @@ class ExchangeTrader:
         self.exchange = getattr(ccxt, exchange_id)(config)
         if sandbox:
             self.exchange.set_sandbox_mode(True)
+        # Suppress noisy rate-limit warning when fetching all open orders without symbol
+        self.exchange.options["warnOnFetchOpenOrdersWithoutSymbol"] = False
 
     # ------------------------------------------------------------------
     # Public API

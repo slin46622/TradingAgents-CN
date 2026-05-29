@@ -365,14 +365,33 @@ function getCurrencySymbol(currency: string | undefined) {
   return ''
 }
 
+// 加密货币短名称映射
+const CRYPTO_SHORT: Record<string, string> = {
+  BTC: 'BTCUSDT', ETH: 'ETHUSDT', BNB: 'BNBUSDT', SOL: 'SOLUSDT',
+  XRP: 'XRPUSDT', ADA: 'ADAUSDT', DOGE: 'DOGEUSDT', AVAX: 'AVAXUSDT',
+  DOT: 'DOTUSDT', MATIC: 'MATICUSDT', LINK: 'LINKUSDT', UNI: 'UNIUSDT',
+  ATOM: 'ATOMUSDT', LTC: 'LTCUSDT', ETC: 'ETCUSDT', NEAR: 'NEARUSDT',
+  APT: 'APTUSDT', ARB: 'ARBUSDT', OP: 'OPUSDT', SUI: 'SUIUSDT',
+  TRX: 'TRXUSDT', FIL: 'FILUSDT', INJ: 'INJUSDT', PEPE: 'PEPEUSDT',
+}
+
 // 检测市场类型
 function detectMarket() {
-  const code = order.value.code.trim().toUpperCase()
-  if (!code) {
+  const raw = order.value.code.trim().toUpperCase()
+  if (!raw) {
     detectedMarket.value = ''
     return
   }
 
+  // 短名称扩展：ETH → ETHUSDT（自动填入输入框）
+  if (CRYPTO_SHORT[raw]) {
+    order.value.code = CRYPTO_SHORT[raw]
+    detectedMarket.value = 'CRYPTO'
+    if (order.value.qty >= 1 && Number.isInteger(order.value.qty)) order.value.qty = 0.01
+    return
+  }
+
+  const code = raw
   // 加密货币：以 USDT/BTC/ETH/BNB/SOL 结尾的字母组合
   if (/^[A-Z0-9]+(USDT|BTC|ETH|BNB|SOL|BUSD)$/.test(code)) {
     detectedMarket.value = 'CRYPTO'
