@@ -72,6 +72,7 @@ from app.routers import paper as paper_router
 from app.routers import backtest as backtest_router
 from app.routers import telegram as telegram_router
 from app.routers import live_trading as live_trading_router
+from app.routers import qlib_selection as qlib_router
 
 
 def get_version() -> str:
@@ -734,6 +735,7 @@ app.include_router(financial_data.router, tags=["financial-data"])
 app.include_router(news_data.router, tags=["news-data"])
 app.include_router(social_media.router, tags=["social-media"])
 app.include_router(internal_messages.router, tags=["internal-messages"])
+app.include_router(qlib_router.router, prefix="/api", tags=["qlib-selection"])
 
 
 @app.get("/")

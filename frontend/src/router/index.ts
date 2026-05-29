@@ -391,6 +391,26 @@ const routes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/quant',
+    name: 'QuantSelection',
+    component: () => import('@/layouts/BasicLayout.vue'),
+    meta: {
+      title: '量化选股',
+      icon: 'DataAnalysis',
+      requiresAuth: true,
+      transition: 'slide-up'
+    },
+    children: [
+      {
+        path: '',
+        name: 'QuantSelectionHome',
+        component: () => import('@/views/QuantSelection/index.vue'),
+        meta: { title: '量化选股', requiresAuth: true }
+      }
+    ]
+  },
+
+  {
     path: '/about',
     name: 'About',
     component: () => import('@/views/About/index.vue'),
