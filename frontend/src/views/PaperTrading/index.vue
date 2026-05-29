@@ -85,6 +85,23 @@
                   </el-descriptions-item>
                 </el-descriptions>
               </el-tab-pane>
+
+              <!-- 加密货币账户 -->
+              <el-tab-pane label="₿ 加密" name="CRYPTO">
+                <el-descriptions :column="1" border>
+                  <el-descriptions-item label="可用保证金">{{ fmtAmount(account.cash?.USDT || 0) }} USDT</el-descriptions-item>
+                  <el-descriptions-item label="持仓市值">{{ fmtAmount(account.positions_value?.USDT || 0) }} USDT</el-descriptions-item>
+                  <el-descriptions-item label="总资产">{{ fmtAmount(account.equity?.USDT || 0) }} USDT</el-descriptions-item>
+                  <el-descriptions-item label="已实现盈亏">
+                    <span :style="{ color: (account.realized_pnl?.USDT || 0) >= 0 ? '#67C23A' : '#F56C6C' }">
+                      {{ fmtAmount(account.realized_pnl?.USDT || 0) }} USDT
+                    </span>
+                  </el-descriptions-item>
+                </el-descriptions>
+                <div style="margin-top:8px;font-size:12px;color:#909399">
+                  💡 加密货币24/7交易，最高100倍杠杆，初始保证金10万USDT
+                </div>
+              </el-tab-pane>
             </el-tabs>
 
             <div style="margin-top: 12px; text-align: center; color: #909399; font-size: 12px">
@@ -119,6 +136,7 @@
                 <el-tag v-if="row.market === 'CN'" type="success" size="small">🇨🇳 A股</el-tag>
                 <el-tag v-else-if="row.market === 'HK'" type="warning" size="small">🇭🇰 港股</el-tag>
                 <el-tag v-else-if="row.market === 'US'" type="info" size="small">🇺🇸 美股</el-tag>
+                <el-tag v-else-if="row.market === 'CRYPTO'" type="danger" size="small">₿ 加密</el-tag>
                 <el-tag v-else size="small">{{ row.market || 'CN' }}</el-tag>
               </template>
             </el-table-column>
@@ -128,6 +146,12 @@
                 <span v-if="row.available_qty !== undefined && row.available_qty < row.quantity" style="color: #909399; font-size: 11px">
                   (可用{{ row.available_qty }})
                 </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="杠杆" width="60">
+              <template #default="{ row }">
+                <el-tag v-if="row.leverage && row.leverage > 1" type="danger" size="small">{{ row.leverage }}x</el-tag>
+                <span v-else style="color:#909399">—</span>
               </template>
             </el-table-column>
             <el-table-column label="均价" width="100">
@@ -256,6 +280,14 @@
           />
           <el-input-number v-else v-model="order.qty" :min="1" />
         </el-form-item>
+        <el-form-item label="杠杆" v-if="detectedMarket === 'CRYPTO'">
+          <div style="width:100%">
+            <el-slider v-model="order.leverage" :min="1" :max="100" :marks="leverageMarks" show-input />
+            <div style="margin-top:4px;font-size:12px;color:#F56C6C">
+              ⚠️ 高杠杆存在强平风险，请谨慎操作
+            </div>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="orderDialog=false">取消</el-button>
@@ -286,9 +318,11 @@ const orders = ref<any[]>([])
 const loading = ref({ account: false, positions: false, orders: false })
 
 const orderDialog = ref(false)
-const order = ref({ side: 'buy', code: '', qty: 100 })
+const order = ref({ side: 'buy', code: '', qty: 100, leverage: 1 })
 const detectedMarket = ref<string>('')
 const activeMarketTab = ref<string>('CN')
+
+const leverageMarks: Record<number, string> = { 1: '1x', 5: '5x', 10: '10x', 20: '20x', 50: '50x', 100: '100x' }
 
 // 计算属性：根据当前市场标签页过滤持仓
 const filteredPositions = computed(() => {
@@ -347,6 +381,8 @@ function detectMarket() {
     }
     return
   }
+  // 非加密货币时重置杠杆
+  order.value.leverage = 1
 
   // 港股：4-5位数字或.HK后缀
   if (/^\d{4,5}$/.test(code) || code.endsWith('.HK')) {
@@ -446,12 +482,15 @@ async function fetchStockNames(items: any[]) {
 }
 
 function openOrderDialog() {
+  order.value = { side: 'buy', code: '', qty: 100, leverage: 1 }
+  detectedMarket.value = ''
   orderDialog.value = true
 }
 
 async function submitOrder() {
   try {
     const payload: any = { side: order.value.side as 'buy' | 'sell', code: order.value.code, quantity: Number(order.value.qty) }
+    if (detectedMarket.value === 'CRYPTO' && order.value.leverage > 1) payload.leverage = order.value.leverage
     if ((order.value as any).analysis_id) payload.analysis_id = (order.value as any).analysis_id
     const res = await paperApi.placeOrder(payload)
     if (res.success) {

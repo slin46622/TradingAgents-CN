@@ -57,7 +57,7 @@ class PlaceOrderRequest(BaseModel):
     side: Literal["buy", "sell"]
     quantity: float = Field(..., gt=0)  # 支持小数仓位（如 0.001 BTC）
     market: Optional[str] = Field(None, description="市场类型 (CN/HK/US/CRYPTO)，不传则自动识别")
-    # 可选：关联的分析ID，便于从分析页面一键下单后追踪
+    leverage: int = Field(1, ge=1, le=100, description="杠杆倍数（仅加密货币，1-100x）")
     analysis_id: Optional[str] = None
 
 
@@ -362,6 +362,7 @@ async def get_account(current_user: dict = Depends(get_current_user)):
             positions_value_by_currency[currency] = 0.0
         positions_value_by_currency[currency] += mkt_value
 
+        pos_leverage = int(p.get("leverage", 1))
         detailed_positions.append({
             "code": code,
             "market": market,
@@ -370,8 +371,9 @@ async def get_account(current_user: dict = Depends(get_current_user)):
             "available_qty": available_qty,
             "avg_cost": avg_cost,
             "last_price": last,
+            "leverage": pos_leverage,
             "market_value": mkt_value,
-            "unrealized_pnl": None if last is None else round((last - avg_cost) * qty, 2)
+            "unrealized_pnl": None if last is None else round((last - avg_cost) * qty * pos_leverage, 2)
         })
 
     # 计算总资产（按货币分别显示）
@@ -424,6 +426,7 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
 
     side = payload.side
     qty = payload.quantity  # float: 支持小数仓位（如 0.001 BTC）
+    leverage = payload.leverage if market == "CRYPTO" else 1
     analysis_id = getattr(payload, "analysis_id", None)
 
     # 2. 确定货币
@@ -446,13 +449,14 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
             detail=f"无法获取股票 {normalized_code} ({market}) 的最新价格"
         )
 
-    # 5. 计算金额
+    # 5. 计算金额（杠杆：名义价值 = price * qty，保证金 = notional / leverage）
     notional = round(price * qty, 2)
+    margin = round(notional / leverage, 2)  # 实际占用资金
 
-    # 6. 获取市场规则并计算手续费
+    # 6. 获取市场规则并计算手续费（按名义价值计算手续费，但手续费通常很小）
     rules = await _get_market_rules(market)
     commission = _calculate_commission(market, side, notional, rules) if rules else 0.0
-    total_cost = notional + commission
+    total_cost = margin + commission  # 买入时只占用保证金
 
     # 7. 获取持仓
     pos = await db["paper_positions"].find_one({"user_id": current_user["id"], "code": normalized_code})
@@ -496,6 +500,7 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
                 "available_qty": initial_available,
                 "frozen_qty": 0,
                 "avg_cost": price,
+                "leverage": leverage,
                 "updated_at": now_iso
             }
             await db["paper_positions"].insert_one(new_pos)
@@ -532,12 +537,14 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
 
         old_qty = pos.get("quantity", 0)
         avg_cost = float(pos.get("avg_cost", 0.0))
+        pos_leverage = int(pos.get("leverage", 1))  # 使用持仓时的杠杆
         new_qty = old_qty - qty
-        pnl = round((price - avg_cost) * qty, 2)
+        pnl = round((price - avg_cost) * qty * pos_leverage, 2)
         realized_pnl_delta = pnl
 
-        # 卖出收入（加到对应货币账户，扣除手续费）
-        net_proceeds = notional - commission
+        # 卖出收入（返还保证金 + 杠杆盈亏，扣除手续费）
+        margin_return = round(avg_cost * qty / pos_leverage, 2)
+        net_proceeds = margin_return + pnl - commission
         await db["paper_accounts"].update_one(
             {"user_id": current_user["id"]},
             {
@@ -577,6 +584,7 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
         "quantity": qty,
         "price": price,
         "amount": notional,
+        "leverage": leverage,
         "commission": commission,
         "status": "filled",
         "created_at": now_iso,
