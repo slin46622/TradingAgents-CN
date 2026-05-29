@@ -717,7 +717,7 @@ const syncAllRealtime = async () => {
 
   syncRealtimeLoading.value = true
   try {
-    const res = await favoritesApi.syncRealtime('tushare')
+    const res = await favoritesApi.syncRealtime('akshare')
     const data = (res as any)?.data
 
     if ((res as any)?.success) {
