@@ -211,7 +211,7 @@ const historySymbol = ref('BTCUSDT')
 onMounted(async () => {
   try {
     const res = await axios.get('/api/live/exchanges')
-    exchanges.value = res.data?.data || []
+    exchanges.value = res.data || []
   } catch { exchanges.value = [{ id: 'binance', name: 'Binance' }] }
   await refreshConfig()
 })
@@ -219,7 +219,7 @@ onMounted(async () => {
 async function refreshConfig() {
   try {
     const res = await axios.get('/api/live/config')
-    Object.assign(configStatus, res.data?.data || { configured: false })
+    Object.assign(configStatus, res.data || { configured: false })
     if (configStatus.configured) {
       loadAccount()
       loadOpenOrders()
@@ -252,7 +252,7 @@ async function testConnection() {
   testingConn.value = true
   try {
     const res = await axios.post('/api/live/test')
-    const d = res.data?.data
+    const d = res.data
     if (d?.connected) {
       ElMessage.success(`连接成功！账户类型: ${d.account_type}，可交易: ${d.can_trade ? '是' : '否'}`)
     } else {
@@ -269,7 +269,7 @@ async function loadAccount() {
   loadingAccount.value = true
   try {
     const res = await axios.get('/api/live/account')
-    balances.value = res.data?.data?.balances || []
+    balances.value = res.data?.balances || []
   } catch {
     // silently fail
   } finally {
@@ -282,7 +282,7 @@ async function fetchPrice() {
   try {
     const exId = configStatus.exchange_id || 'binance'
     const res = await axios.get(`/api/live/price/${orderForm.symbol}`, { params: { exchange_id: exId } })
-    currentPrice.value = res.data?.data?.price?.toFixed(4) || ''
+    currentPrice.value = res.data?.price?.toFixed(4) || ''
   } catch {
     currentPrice.value = ''
   }
@@ -312,7 +312,7 @@ async function placeOrder() {
     if (orderForm.order_type === 'LIMIT' && orderForm.price) payload.price = orderForm.price
 
     const res = await axios.post('/api/live/order', payload)
-    const d = res.data?.data
+    const d = res.data
     ElMessage.success(`下单成功！订单号: ${d?.orderId}，状态: ${d?.status}`)
     loadAccount()
     loadOpenOrders()
@@ -341,7 +341,7 @@ async function cancelOrder(order: any) {
 async function loadOpenOrders() {
   try {
     const res = await axios.get('/api/live/orders')
-    openOrders.value = res.data?.data || []
+    openOrders.value = res.data || []
   } catch { /* */ }
 }
 
@@ -349,7 +349,7 @@ async function loadHistory() {
   if (!historySymbol.value) return
   try {
     const res = await axios.get('/api/live/history', { params: { symbol: historySymbol.value } })
-    orderHistory.value = res.data?.data || []
+    orderHistory.value = res.data || []
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail || '查询失败')
   }

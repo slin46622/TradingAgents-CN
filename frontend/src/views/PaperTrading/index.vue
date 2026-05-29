@@ -232,20 +232,29 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="代码">
-          <el-input v-model="order.code" placeholder="A股: 600519 | 港股: 0700 | 美股: AAPL" @input="detectMarket" />
+          <el-input v-model="order.code" placeholder="A股: 600519 | 港股: 0700 | 美股: AAPL | 加密: BTCUSDT" @input="detectMarket" />
         </el-form-item>
         <el-form-item label="市场" v-if="detectedMarket">
           <el-tag v-if="detectedMarket === 'CN'" type="success">🇨🇳 A股市场 (CNY)</el-tag>
           <el-tag v-else-if="detectedMarket === 'HK'" type="warning">🇭🇰 港股市场 (HKD)</el-tag>
           <el-tag v-else-if="detectedMarket === 'US'" type="info">🇺🇸 美股市场 (USD)</el-tag>
+          <el-tag v-else-if="detectedMarket === 'CRYPTO'" type="danger">₿ 加密货币 (USDT)</el-tag>
           <div style="margin-top: 8px; font-size: 12px; color: #909399">
             <span v-if="detectedMarket === 'CN'">💡 A股T+1，今天买入明天可卖</span>
             <span v-else-if="detectedMarket === 'HK'">💡 港股T+0，买入后立即可卖</span>
             <span v-else-if="detectedMarket === 'US'">💡 美股T+0，买入后立即可卖 | 零佣金</span>
+            <span v-else-if="detectedMarket === 'CRYPTO'">💡 加密货币24/7交易，支持小数数量</span>
           </div>
         </el-form-item>
         <el-form-item label="数量">
-          <el-input-number v-model="order.qty" :min="1" />
+          <el-input-number
+            v-if="detectedMarket === 'CRYPTO'"
+            v-model="order.qty"
+            :min="0.000001"
+            :precision="6"
+            :step="0.001"
+          />
+          <el-input-number v-else v-model="order.qty" :min="1" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -330,9 +339,9 @@ function detectMarket() {
     return
   }
 
-  // 美股：纯字母
-  if (/^[A-Z]+$/.test(code)) {
-    detectedMarket.value = 'US'
+  // 加密货币：以 USDT/BTC/ETH/BNB/SOL 结尾的字母组合
+  if (/^[A-Z0-9]+(USDT|BTC|ETH|BNB|SOL|BUSD)$/.test(code)) {
+    detectedMarket.value = 'CRYPTO'
     return
   }
 
@@ -345,6 +354,12 @@ function detectMarket() {
   // A股：6位数字
   if (/^\d{6}$/.test(code)) {
     detectedMarket.value = 'CN'
+    return
+  }
+
+  // 美股：纯字母（在加密检测之后）
+  if (/^[A-Z]+$/.test(code)) {
+    detectedMarket.value = 'US'
     return
   }
 
@@ -483,6 +498,12 @@ function goAnalysisWithCode(stockCode: string) {
 // 根据股票代码判断市场
 function getMarketByCode(code: string): string {
   if (!code) return 'A股'
+  const upper = code.toUpperCase()
+
+  // 加密货币
+  if (/^[A-Z0-9]+(USDT|BTC|ETH|BNB|SOL|BUSD)$/.test(upper)) {
+    return '加密'
+  }
 
   // 6位数字 = A股
   if (/^\d{6}$/.test(code)) {
@@ -490,7 +511,12 @@ function getMarketByCode(code: string): string {
   }
 
   // 包含 .HK = 港股
-  if (code.includes('.HK') || code.includes('.hk')) {
+  if (upper.includes('.HK')) {
+    return '港股'
+  }
+
+  // 4-5位数字 = 港股
+  if (/^\d{4,5}$/.test(code)) {
     return '港股'
   }
 
