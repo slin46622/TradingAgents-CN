@@ -28,6 +28,18 @@ except ImportError:
     TOKEN_TRACKING_ENABLED = False
     logger.warning("⚠️ Token跟踪功能未启用")
 
+# Token accumulator for tracking per-analysis token usage
+_token_accumulator = {'input_tokens': 0, 'output_tokens': 0}
+
+def reset_token_accumulator():
+    """Reset the token accumulator for a new analysis."""
+    global _token_accumulator
+    _token_accumulator = {'input_tokens': 0, 'output_tokens': 0}
+
+def get_token_accumulator():
+    """Get current token usage accumulator."""
+    return _token_accumulator.copy()
+
 
 class OpenAICompatibleBase(ChatOpenAI):
     """
@@ -176,6 +188,7 @@ class OpenAICompatibleBase(ChatOpenAI):
 
     def _track_token_usage(self, result: ChatResult, kwargs: Dict, start_time: float):
         """记录token使用量并输出日志"""
+        global _token_accumulator
         if not TOKEN_TRACKING_ENABLED:
             return
         try:
@@ -184,6 +197,12 @@ class OpenAICompatibleBase(ChatOpenAI):
             total_tokens = usage.get("total_tokens") if usage else None
             prompt_tokens = usage.get("input_tokens") if usage else None
             completion_tokens = usage.get("output_tokens") if usage else None
+
+            # 更新accumulator
+            if prompt_tokens is not None:
+                _token_accumulator['input_tokens'] += prompt_tokens
+            if completion_tokens is not None:
+                _token_accumulator['output_tokens'] += completion_tokens
 
             elapsed = time.time() - start_time
             logger.info(

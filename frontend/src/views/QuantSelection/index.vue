@@ -103,7 +103,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else-if="!selecting" description="点击"开始选股"获取排名列表" />
+      <el-empty v-else-if="!selecting" description='点击「开始选股」获取排名列表' />
     </el-card>
 
     <!-- 回测 -->

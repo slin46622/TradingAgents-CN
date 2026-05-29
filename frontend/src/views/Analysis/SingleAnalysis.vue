@@ -130,9 +130,11 @@
                     v-for="analyst in ANALYSTS"
                     :key="analyst.id"
                     class="analyst-card"
-                    :class="{ 
+                    :class="{
                       active: analysisForm.selectedAnalysts.includes(analyst.name),
-                      disabled: analyst.name === '社媒分析师' && analysisForm.market === 'A股'
+                      disabled: (analyst.name === '社媒分析师' && analysisForm.market === 'A股')
+                        || (analysisForm.market === '加密' && ['基本面分析师', '社媒分析师'].includes(analyst.name))
+                        || (analysisForm.market !== '加密' && analyst.name === '加密货币分析师')
                     }"
                     @click="toggleAnalyst(analyst.name)"
                   >
@@ -158,6 +160,14 @@
                   v-if="analysisForm.market === 'A股'"
                   title="A股市场暂不支持社媒分析（国内数据源限制）"
                   type="info"
+                  :closable="false"
+                  style="margin-top: 12px"
+                />
+                <!-- 加密货币提示 -->
+                <el-alert
+                  v-if="analysisForm.market === '加密'"
+                  title="加密市场：已自动启用加密货币分析师，基本面/社媒分析师不适用"
+                  type="warning"
                   :closable="false"
                   style="margin-top: 12px"
                 />
@@ -848,8 +858,19 @@ const onMarketChange = () => {
   if (analysisForm.stockCode.trim()) {
     validateStockCodeInput()
   } else {
-    // 显示新市场的格式提示
     stockCodeHelp.value = getStockCodeFormatHelp(analysisForm.market)
+  }
+
+  // 加密市场：自动选中加密货币分析师，移除基本面/社媒
+  if (analysisForm.market === '加密') {
+    analysisForm.selectedAnalysts = ['市场分析师', '新闻分析师', '加密货币分析师']
+  } else {
+    // 切回其他市场时移除加密货币分析师
+    const idx = analysisForm.selectedAnalysts.indexOf('加密货币分析师')
+    if (idx > -1) analysisForm.selectedAnalysts.splice(idx, 1)
+    if (analysisForm.selectedAnalysts.length === 0) {
+      analysisForm.selectedAnalysts = ['市场分析师', '基本面分析师']
+    }
   }
 }
 
@@ -896,9 +917,9 @@ const fetchStockInfo = () => {
 
 // 切换分析师
 const toggleAnalyst = (analystName: string) => {
-  if (analystName === '社媒分析师' && analysisForm.market === 'A股') {
-    return
-  }
+  if (analystName === '社媒分析师' && analysisForm.market === 'A股') return
+  if (analysisForm.market === '加密' && ['基本面分析师', '社媒分析师'].includes(analystName)) return
+  if (analysisForm.market !== '加密' && analystName === '加密货币分析师') return
 
   const index = analysisForm.selectedAnalysts.indexOf(analystName)
   if (index > -1) {

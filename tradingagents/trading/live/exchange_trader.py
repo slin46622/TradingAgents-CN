@@ -10,6 +10,7 @@ The helper ``normalize_symbol`` converts Binance-style "BTCUSDT" if needed.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Optional
 
@@ -86,6 +87,15 @@ class ExchangeTrader:
         }
         if password and exchange_id in _NEED_PASSWORD:
             config["password"] = password
+
+        # CCXT sets session.trust_env=False so env proxy vars are ignored.
+        # Detect proxy from environment and pass explicitly.
+        https_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        http_proxy = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+        if https_proxy:
+            config["httpsProxy"] = https_proxy
+        elif http_proxy:
+            config["httpProxy"] = http_proxy
 
         self.exchange_id = exchange_id
         self.exchange = getattr(ccxt, exchange_id)(config)

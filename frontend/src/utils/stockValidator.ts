@@ -109,23 +109,37 @@ export function validateHKStock(code: string): StockValidationResult {
   }
 }
 
+// Short crypto name → full symbol mapping (e.g. btc → BTCUSDT)
+const CRYPTO_SHORT_NAMES: Record<string, string> = {
+  'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT', 'SOL': 'SOLUSDT',
+  'XRP': 'XRPUSDT', 'ADA': 'ADAUSDT', 'DOGE': 'DOGEUSDT', 'AVAX': 'AVAXUSDT',
+  'DOT': 'DOTUSDT', 'MATIC': 'MATICUSDT', 'LINK': 'LINKUSDT', 'UNI': 'UNIUSDT',
+  'ATOM': 'ATOMUSDT', 'LTC': 'LTCUSDT', 'ETC': 'ETCUSDT', 'NEAR': 'NEARUSDT',
+  'APT': 'APTUSDT', 'ARB': 'ARBUSDT', 'OP': 'OPUSDT', 'SUI': 'SUIUSDT',
+  'TRX': 'TRXUSDT', 'FIL': 'FILUSDT', 'INJ': 'INJUSDT', 'IMX': 'IMXUSDT',
+  'PEPE': 'PEPEUSDT', 'WIF': 'WIFUSDT', 'BONK': 'BONKUSDT',
+}
+
 /**
  * 加密货币代码格式验证
+ * 支持短名称（如 btc、eth）自动补全为完整交易对（BTCUSDT、ETHUSDT）
  * 格式：字母数字组合，以 USDT/BTC/ETH/BNB/SOL/BUSD 结尾
- * 示例：BTCUSDT, ETHUSDT, SOLUSDT
+ * 示例：BTCUSDT, ETHUSDT, SOLUSDT, btc, eth
  */
 export function validateCryptoCode(code: string): StockValidationResult {
   const cleanCode = code.trim().toUpperCase()
-  if (!/^[A-Z0-9]+(USDT|BTC|ETH|BNB|SOL|BUSD)$/.test(cleanCode)) {
+  // Expand short names first
+  const expanded = CRYPTO_SHORT_NAMES[cleanCode] || cleanCode
+  if (!/^[A-Z0-9]+(USDT|BTC|ETH|BNB|SOL|BUSD)$/.test(expanded)) {
     return {
       valid: false,
-      message: '加密货币代码格式不正确（如 BTCUSDT、ETHUSDT）'
+      message: '加密货币代码格式不正确（支持短名如 btc、eth，或完整代码如 BTCUSDT）'
     }
   }
   return {
     valid: true,
     market: '加密',
-    normalizedCode: cleanCode
+    normalizedCode: expanded
   }
 }
 
