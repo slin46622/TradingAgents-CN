@@ -52,6 +52,11 @@
       <template #title>实盘交易</template>
     </el-menu-item>
 
+    <el-menu-item index="/quant">
+      <el-icon><TrendCharts /></el-icon>
+      <template #title>量化选股</template>
+    </el-menu-item>
+
     <el-menu-item index="/backtest">
       <el-icon><DataAnalysis /></el-icon>
       <template #title>回测系统</template>
