@@ -1,8 +1,8 @@
 <template>
   <div class="live-trading">
     <div class="page-header">
-      <h2>Binance 实盘交易</h2>
-      <p class="page-desc">通过 Binance API 进行加密货币现货交易。请谨慎操作，实盘交易涉及真实资金。</p>
+      <h2>实盘交易</h2>
+      <p class="page-desc">通过 CCXT 连接主流加密货币交易所，支持 Binance / OKX / Bybit / Gate.io / Kraken 等。请谨慎操作，实盘交易涉及真实资金。</p>
     </div>
 
     <!-- API 配置卡 -->
@@ -10,16 +10,26 @@
       <template #header>
         <div class="card-header">
           <span>API 配置</span>
-          <el-tag v-if="configStatus.configured" type="success" size="small">已配置</el-tag>
+          <el-tag v-if="configStatus.configured" type="success" size="small">
+            已配置 · {{ configStatus.exchange_id?.toUpperCase() }}
+          </el-tag>
           <el-tag v-else type="info" size="small">未配置</el-tag>
         </div>
       </template>
       <el-form :model="configForm" label-width="110px" style="max-width:540px">
+        <el-form-item label="交易所">
+          <el-select v-model="configForm.exchange_id" style="width:200px">
+            <el-option v-for="ex in exchanges" :key="ex.id" :label="ex.name" :value="ex.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="API Key">
-          <el-input v-model="configForm.api_key" placeholder="Binance API Key" show-password clearable />
+          <el-input v-model="configForm.api_key" placeholder="API Key" show-password clearable />
         </el-form-item>
         <el-form-item label="API Secret">
-          <el-input v-model="configForm.api_secret" placeholder="Binance API Secret" show-password clearable />
+          <el-input v-model="configForm.api_secret" placeholder="API Secret" show-password clearable />
+        </el-form-item>
+        <el-form-item v-if="needsPassword" label="Passphrase">
+          <el-input v-model="configForm.password" placeholder="OKX/KuCoin/Bitget 需要" show-password clearable />
         </el-form-item>
         <el-form-item label="启用实盘">
           <el-switch v-model="configForm.enabled" />
@@ -31,7 +41,7 @@
         </el-form-item>
       </el-form>
       <div v-if="configStatus.configured" class="config-hint">
-        当前 Key：{{ configStatus.api_key_masked }}
+        交易所：{{ configStatus.exchange_id?.toUpperCase() }} &nbsp;|&nbsp; Key：{{ configStatus.api_key_masked }}
       </div>
     </el-card>
 
@@ -159,18 +169,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 interface ConfigStatus {
   configured: boolean
+  exchange_id?: string
   api_key_masked?: string
   enabled?: boolean
 }
 
+interface Exchange { id: string; name: string }
+
+const exchanges = ref<Exchange[]>([])
 const configStatus = reactive<ConfigStatus>({ configured: false })
-const configForm = reactive({ api_key: '', api_secret: '', enabled: true })
+const configForm = reactive({ exchange_id: 'binance', api_key: '', api_secret: '', password: '', enabled: true })
+
+const needsPassword = computed(() => ['okx', 'kucoin', 'bitget'].includes(configForm.exchange_id))
 const savingConfig = ref(false)
 const testingConn = ref(false)
 
@@ -193,6 +209,10 @@ const orderHistory = ref<any[]>([])
 const historySymbol = ref('BTCUSDT')
 
 onMounted(async () => {
+  try {
+    const res = await axios.get('/api/live/exchanges')
+    exchanges.value = res.data?.data || []
+  } catch { exchanges.value = [{ id: 'binance', name: 'Binance' }] }
   await refreshConfig()
 })
 
@@ -214,7 +234,9 @@ async function saveConfig() {
   }
   savingConfig.value = true
   try {
-    await axios.post('/api/live/config', configForm)
+    const payload: any = { ...configForm }
+    if (!needsPassword.value) delete payload.password
+    await axios.post('/api/live/config', payload)
     ElMessage.success('配置已保存')
     configForm.api_key = ''
     configForm.api_secret = ''
@@ -258,7 +280,8 @@ async function loadAccount() {
 async function fetchPrice() {
   if (!orderForm.symbol) return
   try {
-    const res = await axios.get(`/api/live/price/${orderForm.symbol}`)
+    const exId = configStatus.exchange_id || 'binance'
+    const res = await axios.get(`/api/live/price/${orderForm.symbol}`, { params: { exchange_id: exId } })
     currentPrice.value = res.data?.data?.price?.toFixed(4) || ''
   } catch {
     currentPrice.value = ''
