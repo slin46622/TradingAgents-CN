@@ -114,13 +114,15 @@
         <el-table-column prop="symbol" label="交易对" width="120" />
         <el-table-column prop="side" label="方向" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.side === 'BUY' ? 'success' : 'danger'" size="small">{{ row.side }}</el-tag>
+            <el-tag :type="row.side === 'buy' ? 'success' : 'danger'" size="small">{{ row.side?.toUpperCase() }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="type" label="类型" width="90" />
+        <el-table-column prop="type" label="类型" width="90">
+          <template #default="{ row }">{{ row.type?.toUpperCase() }}</template>
+        </el-table-column>
         <el-table-column prop="price" label="价格" />
-        <el-table-column prop="origQty" label="数量" />
-        <el-table-column prop="executedQty" label="已成交" />
+        <el-table-column prop="amount" label="数量" />
+        <el-table-column prop="filled" label="已成交" />
         <el-table-column label="操作" width="80">
           <template #default="{ row }">
             <el-button link type="danger" size="small" @click="cancelOrder(row)">撤单</el-button>
@@ -145,22 +147,24 @@
         <el-table-column prop="symbol" label="交易对" width="120" />
         <el-table-column prop="side" label="方向" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.side === 'BUY' ? 'success' : 'danger'" size="small">{{ row.side }}</el-tag>
+            <el-tag :type="row.side === 'buy' ? 'success' : 'danger'" size="small">{{ row.side?.toUpperCase() }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="type" label="类型" width="90" />
+        <el-table-column prop="type" label="类型" width="90">
+          <template #default="{ row }">{{ row.type?.toUpperCase() }}</template>
+        </el-table-column>
         <el-table-column prop="price" label="价格" />
-        <el-table-column prop="origQty" label="数量" />
-        <el-table-column prop="executedQty" label="成交量" />
+        <el-table-column prop="amount" label="数量" />
+        <el-table-column prop="filled" label="成交量" />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'FILLED' ? 'success' : row.status === 'CANCELED' ? 'info' : 'warning'" size="small">
-              {{ row.status }}
+            <el-tag :type="row.status === 'closed' ? 'success' : row.status === 'canceled' ? 'info' : 'warning'" size="small">
+              {{ row.status?.toUpperCase() }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="时间" width="160">
-          <template #default="{ row }">{{ formatTime(row.time) }}</template>
+          <template #default="{ row }">{{ formatTime(row.timestamp) }}</template>
         </el-table-column>
       </el-table>
       <el-empty v-if="orderHistory.length === 0" description="输入交易对后点击查询" />
@@ -304,16 +308,16 @@ async function placeOrder() {
   try {
     const payload: any = {
       symbol: orderForm.symbol,
-      side: orderForm.side,
-      order_type: orderForm.order_type,
+      side: orderForm.side.toLowerCase(),         // BUY→buy, SELL→sell
+      order_type: orderForm.order_type.toLowerCase(), // MARKET→market, LIMIT→limit
     }
-    if (orderForm.quantity) payload.quantity = orderForm.quantity
-    if (orderForm.quote_order_qty) payload.quote_order_qty = orderForm.quote_order_qty
+    if (orderForm.quantity) payload.amount = orderForm.quantity          // backend field is 'amount'
+    if (orderForm.quote_order_qty) payload.cost = orderForm.quote_order_qty  // backend field is 'cost'
     if (orderForm.order_type === 'LIMIT' && orderForm.price) payload.price = orderForm.price
 
     const res = await axios.post('/api/live/order', payload)
     const d = res.data
-    ElMessage.success(`下单成功！订单号: ${d?.orderId}，状态: ${d?.status}`)
+    ElMessage.success(`下单成功！订单号: ${d?.id || d?.orderId}，状态: ${d?.status}`)
     loadAccount()
     loadOpenOrders()
   } catch (err: any) {
@@ -324,13 +328,14 @@ async function placeOrder() {
 }
 
 async function cancelOrder(order: any) {
+  const orderId = order.id || order.orderId
   try {
-    await ElMessageBox.confirm(`确认撤销 ${order.symbol} 订单 #${order.orderId}？`, '撤单确认', {
+    await ElMessageBox.confirm(`确认撤销 ${order.symbol} 订单 #${orderId}？`, '撤单确认', {
       type: 'warning',
     })
   } catch { return }
   try {
-    await axios.delete(`/api/live/order/${order.orderId}`, { params: { symbol: order.symbol } })
+    await axios.delete(`/api/live/order/${orderId}`, { params: { symbol: order.symbol } })
     ElMessage.success('撤单成功')
     loadOpenOrders()
   } catch (err: any) {

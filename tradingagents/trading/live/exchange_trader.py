@@ -96,29 +96,64 @@ class ExchangeTrader:
     # Public API
     # ------------------------------------------------------------------
 
+    # Binance exchange ids that support private_get_account()
+    _BINANCE_IDS = frozenset({"binance", "binanceusdm", "binancecoinm"})
+
     def test_connection(self) -> dict:
-        """Fetch balance to verify credentials. Raises on auth failure."""
-        balance = self.exchange.fetch_balance()
-        non_zero = [k for k, v in balance["total"].items() if v and v > 0]
-        return {
-            "connected": True,
-            "exchange": self.exchange_id,
-            "non_zero_assets": len(non_zero),
-        }
+        """Verify credentials with the lightest signed endpoint available.
+
+        Binance: uses GET /api/v3/account (only needs Enable Reading, avoids
+        the SAPI capital/config endpoint that requires elevated permissions).
+        Other exchanges: uses fetch_balance({'type': 'spot'}).
+        """
+        if self.exchange_id in self._BINANCE_IDS:
+            info = self.exchange.private_get_account()
+            return {
+                "connected": True,
+                "exchange": self.exchange_id,
+                "account_type": info.get("accountType", "SPOT"),
+                "can_trade": info.get("canTrade", False),
+            }
+        else:
+            balance = self.exchange.fetch_balance({"type": "spot"})
+            non_zero = [k for k, v in balance.get("total", {}).items() if v and v > 0]
+            return {
+                "connected": True,
+                "exchange": self.exchange_id,
+                "account_type": "SPOT",
+                "can_trade": True,
+                "non_zero_assets": len(non_zero),
+            }
 
     def get_account(self) -> dict:
-        """Return all non-zero balances."""
-        balance = self.exchange.fetch_balance()
-        balances = [
-            {
-                "asset": asset,
-                "free": round(float(balance["free"].get(asset, 0)), 8),
-                "locked": round(float(balance["used"].get(asset, 0)), 8),
-                "total": round(float(v), 8),
-            }
-            for asset, v in balance["total"].items()
-            if v and float(v) > 0
-        ]
+        """Return all non-zero balances.
+
+        Binance: uses GET /api/v3/account to avoid the SAPI capital endpoint.
+        """
+        if self.exchange_id in self._BINANCE_IDS:
+            info = self.exchange.private_get_account()
+            balances = [
+                {
+                    "asset": b["asset"],
+                    "free": round(float(b.get("free", 0)), 8),
+                    "locked": round(float(b.get("locked", 0)), 8),
+                    "total": round(float(b.get("free", 0)) + float(b.get("locked", 0)), 8),
+                }
+                for b in info.get("balances", [])
+                if float(b.get("free", 0)) + float(b.get("locked", 0)) > 0
+            ]
+        else:
+            balance = self.exchange.fetch_balance({"type": "spot"})
+            balances = [
+                {
+                    "asset": asset,
+                    "free": round(float(balance["free"].get(asset, 0)), 8),
+                    "locked": round(float(balance["used"].get(asset, 0)), 8),
+                    "total": round(float(v), 8),
+                }
+                for asset, v in balance.get("total", {}).items()
+                if v and float(v) > 0
+            ]
         return {"exchange": self.exchange_id, "balances": balances}
 
     def get_ticker_price(self, symbol: str) -> float:
