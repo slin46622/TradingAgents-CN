@@ -342,6 +342,9 @@ function detectMarket() {
   // 加密货币：以 USDT/BTC/ETH/BNB/SOL 结尾的字母组合
   if (/^[A-Z0-9]+(USDT|BTC|ETH|BNB|SOL|BUSD)$/.test(code)) {
     detectedMarket.value = 'CRYPTO'
+    if (order.value.qty >= 1 && Number.isInteger(order.value.qty)) {
+      order.value.qty = 0.01
+    }
     return
   }
 

@@ -92,8 +92,8 @@ const form = reactive({
 onMounted(async () => {
   try {
     const res = await axios.get('/api/telegram/config')
-    if (res.data?.data?.configured) {
-      Object.assign(currentConfig, res.data.data)
+    if (res.data?.configured) {
+      Object.assign(currentConfig, res.data)
     }
   } catch {
     // not configured yet
@@ -111,7 +111,7 @@ async function saveConfig() {
     ElMessage.success('配置已保存')
     // refresh status
     const res = await axios.get('/api/telegram/config')
-    if (res.data?.data) Object.assign(currentConfig, res.data.data)
+    if (res.data) Object.assign(currentConfig, res.data)
     form.bot_token = ''
   } catch {
     ElMessage.error('保存失败，请稍后重试')
@@ -124,7 +124,7 @@ async function testConnection() {
   testing.value = true
   try {
     const res = await axios.post('/api/telegram/test')
-    if (res.data?.data?.connected) {
+    if (res.data?.connected) {
       ElMessage.success('连接成功！请查看 Telegram 中的确认消息')
     } else {
       ElMessage.error('连接失败，请检查 Token 和 Chat ID 是否正确')
