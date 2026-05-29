@@ -257,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CreditCard, Refresh, Plus, Delete } from '@element-plus/icons-vue'
@@ -585,6 +585,21 @@ onMounted(() => {
     orderDialog.value = true
   }
   refreshAll()
+})
+
+// 加密货币持仓 24/7，每 30 秒自动刷新价格
+let _cryptoTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  _cryptoTimer = setInterval(() => {
+    // 只在有加密持仓时刷新，减少无效请求
+    const hasCrypto = positions.value.some(
+      (p: any) => p.market === 'CRYPTO' || String(p.code || '').includes('USDT')
+    )
+    if (hasCrypto) refreshAll()
+  }, 30_000)
+})
+onUnmounted(() => {
+  if (_cryptoTimer) clearInterval(_cryptoTimer)
 })
 </script>
 

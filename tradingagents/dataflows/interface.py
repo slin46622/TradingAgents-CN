@@ -1908,6 +1908,68 @@ def get_hk_stock_info_unified(symbol: str) -> Dict:
         }
 
 
+def get_crypto_stock_data_unified(
+    symbol: str,
+    start_date: str = None,
+    end_date: str = None,
+    limit: int = 60,
+) -> str:
+    """Binance REST → CoinGecko fallback，返回格式化的加密货币行情文本。"""
+    try:
+        from .providers.crypto.binance import BinanceProvider
+        bp = BinanceProvider()
+        df = bp.get_ohlcv(symbol, start_date=start_date, end_date=end_date, limit=limit)
+        current_price = bp.get_price(symbol)
+        source = "Binance"
+    except Exception as e:
+        logger.warning(f"Binance 获取 {symbol} 数据失败，切换 CoinGecko: {e}")
+        df = None
+        current_price = 0.0
+        source = "CoinGecko"
+
+    if df is None or df.empty:
+        try:
+            from .providers.crypto.coingecko import CoinGeckoProvider
+            cg = CoinGeckoProvider()
+            df = cg.get_ohlcv(symbol, limit=min(limit, 90))
+            current_price = cg.get_price(symbol)
+        except Exception as e2:
+            logger.error(f"CoinGecko 获取 {symbol} 数据也失败: {e2}")
+            return f"❌ 无法获取 {symbol} 行情数据（Binance 和 CoinGecko 均失败）"
+
+    if df is None or df.empty:
+        return f"❌ {symbol} 暂无行情数据"
+
+    lines = [
+        f"加密货币行情数据 — {symbol.upper()}（数据源: {source}）",
+        f"当前价格: {current_price:.4f} USDT",
+        f"数据区间: {df['date'].iloc[0].strftime('%Y-%m-%d')} ~ {df['date'].iloc[-1].strftime('%Y-%m-%d')}",
+        "",
+        f"{'日期':<12} {'开盘':>10} {'最高':>10} {'最低':>10} {'收盘':>10} {'成交量':>15}",
+        "-" * 68,
+    ]
+    for _, row in df.tail(30).iterrows():
+        date_str = row["date"].strftime("%Y-%m-%d") if hasattr(row["date"], "strftime") else str(row["date"])
+        lines.append(
+            f"{date_str:<12} {row['open']:>10.4f} {row['high']:>10.4f}"
+            f" {row['low']:>10.4f} {row['close']:>10.4f} {row['volume']:>15.2f}"
+        )
+
+    # 简单技术指标
+    closes = df["close"].values
+    if len(closes) >= 7:
+        ma7 = closes[-7:].mean()
+        lines.append(f"\n7日均价: {ma7:.4f} USDT")
+    if len(closes) >= 30:
+        ma30 = closes[-30:].mean()
+        lines.append(f"30日均价: {ma30:.4f} USDT")
+    if len(closes) >= 2:
+        chg = (closes[-1] - closes[-2]) / closes[-2] * 100
+        lines.append(f"近1日涨跌: {chg:+.2f}%")
+
+    return "\n".join(lines)
+
+
 def get_stock_data_by_market(symbol: str, start_date: str = None, end_date: str = None) -> str:
     """
     根据股票市场类型自动选择数据源获取数据
@@ -1925,7 +1987,10 @@ def get_stock_data_by_market(symbol: str, start_date: str = None, end_date: str 
 
         market_info = StockUtils.get_market_info(symbol)
 
-        if market_info['is_china']:
+        if market_info['is_crypto']:
+            # 加密货币 — 使用 Binance REST，CoinGecko 备用
+            return get_crypto_stock_data_unified(symbol, start_date, end_date)
+        elif market_info['is_china']:
             # 中国A股
             return get_china_stock_data_unified(symbol, start_date, end_date)
         elif market_info['is_hk']:
