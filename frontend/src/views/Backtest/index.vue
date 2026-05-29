@@ -204,7 +204,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import axios from '@/api/request'
 
 interface BacktestMetrics {
   total_return_pct: number

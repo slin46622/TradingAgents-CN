@@ -150,7 +150,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import axios from '@/api/request'
 
 const router = useRouter()
 
